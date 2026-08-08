@@ -86,22 +86,32 @@ def macd_hist(closes):
 # STATO (persistito nel file dentro il repo)
 # ---------------------------------------------------------------------------
 def load_state():
-    if STATE_FILE.exists():
-        try:
-            return json.loads(STATE_FILE.read_text())
-        except Exception:
-            pass
-    return {
+    """Carica lo stato dal file JSON, unendo i valori predefiniti a quelli salvati.
+    In questo modo, se lo script viene aggiornato con nuove chiavi, queste vengono
+    automaticamente inizializzate senza causare KeyError."""
+    defaults = {
         "day": date.today().isoformat(),
         "day_status": "active",
         "session_closed_today": False,
         "closes": [],
         "bucket_start": None,
-        "bucket_o": None, "bucket_h": None, "bucket_l": None, "bucket_c": None,
+        "bucket_o": None,
+        "bucket_h": None,
+        "bucket_l": None,
+        "bucket_c": None,
         "trades": [],
         "last_signal_key": None,
         "telegram_offset": 0,
     }
+    if STATE_FILE.exists():
+        try:
+            saved = json.loads(STATE_FILE.read_text())
+            # Unisce i defaults con i dati salvati (i defaults vengono sovrascritti dai valori esistenti)
+            merged = {**defaults, **saved}
+            return merged
+        except Exception:
+            pass
+    return defaults
 
 
 def save_state(state):
