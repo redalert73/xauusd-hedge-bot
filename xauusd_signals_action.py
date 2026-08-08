@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 """
-def run_once():
-    try:
-        # ... tutto il codice attuale ...
-    except Exception as e:
-        print(f"[ERRORE] {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-
 XAUUSD Hedge Risk Signals Bot — versione GitHub Actions
 ==========================================================
 A differenza della versione "PC sempre acceso" (xauusd_signals_bot.py),
