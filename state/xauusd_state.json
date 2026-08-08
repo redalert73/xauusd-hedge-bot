@@ -3,9 +3,10 @@
   "day_status": "active",
   "session_closed_today": false,
   "closes": [
+    4343.299805,
     4343.299805
   ],
-  "bucket_start": 1786206600,
+  "bucket_start": 1786208400,
   "bucket_o": 4343.299805,
   "bucket_h": 4343.299805,
   "bucket_l": 4343.299805,
