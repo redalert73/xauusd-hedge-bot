@@ -1,8 +1,11 @@
 {
   "day": "2026-08-08",
   "day_status": "active",
-  "closes": [],
-  "bucket_start": 1786201200,
+  "session_closed_today": false,
+  "closes": [
+    4343.299805
+  ],
+  "bucket_start": 1786206600,
   "bucket_o": 4343.299805,
   "bucket_h": 4343.299805,
   "bucket_l": 4343.299805,
