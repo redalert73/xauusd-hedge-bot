@@ -1,0 +1,13 @@
+{
+  "day": "2026-08-08",
+  "day_status": "active",
+  "closes": [],
+  "bucket_start": 1786201200,
+  "bucket_o": 4343.299805,
+  "bucket_h": 4343.299805,
+  "bucket_l": 4343.299805,
+  "bucket_c": 4343.299805,
+  "trades": [],
+  "last_signal_key": null,
+  "telegram_offset": 0
+}
