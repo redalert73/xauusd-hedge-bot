@@ -305,7 +305,7 @@ def run_once():
             if sig_key != state["last_signal_key"]:
                 state["last_signal_key"] = sig_key
                 pnl, _, _ = compute_daily_pnl(state, price)
-                if state["day_status"] == "active":
+                if trading_allowed(state):
                     tg_send(
                         f"📡 SEGNALE XAUUSD — {sig_type}\n"
                         f"Prezzo: {price:.2f}\n"
@@ -314,7 +314,7 @@ def run_once():
                         f"P&L oggi: {pnl:+.2f}$"
                     )
                 else:
-                    print(f"[segnale sospeso: {state['day_status']}] {sig_type} @ {price:.2f}")
+                    print(f"[segnale sospeso: sessione non attiva] {sig_type} @ {price:.2f}")
 
     pnl, _, _ = compute_daily_pnl(state, price)
     if state["day_status"] == "active":
