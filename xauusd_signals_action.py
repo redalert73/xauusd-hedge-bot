@@ -21,6 +21,7 @@ import os
 import time
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -34,6 +35,9 @@ CFG = {
     "daily_stop": float(os.environ.get("DAILY_STOP", "2700")),
     "daily_target": float(os.environ.get("DAILY_TARGET", "3000")),
     "bucket_seconds": int(os.environ.get("BUCKET_SECONDS", "1800")),  # 30 min, allineato alla cadenza cron consigliata
+    "timezone": os.environ.get("PLATFORM_TIMEZONE", "Europe/Rome"),
+    "platform_close_hour": int(os.environ.get("PLATFORM_CLOSE_HOUR", "20")),
+    "platform_close_minute": int(os.environ.get("PLATFORM_CLOSE_MINUTE", "58")),
 }
 
 OZ_PER_LOT = 100
@@ -90,6 +94,7 @@ def load_state():
     return {
         "day": date.today().isoformat(),
         "day_status": "active",
+        "session_closed_today": False,
         "closes": [],
         "bucket_start": None,
         "bucket_o": None, "bucket_h": None, "bucket_l": None, "bucket_c": None,
@@ -156,7 +161,43 @@ def check_daily_reset(state):
     if state["day"] != today:
         state["day"] = today
         state["day_status"] = "active"
+        state["session_closed_today"] = False
         print(f"[nuovo giorno] governatore di rischio riattivato ({today})")
+
+
+def trading_allowed(state):
+    return state["day_status"] == "active" and not state["session_closed_today"]
+
+
+def enforce_platform_close(state, price):
+    """La piattaforma chiude automaticamente le posizioni entro le 20:58 ora
+    italiana. Se c'è ancora una posizione aperta a quell'ora, la chiudiamo
+    anche noi nello stato interno (allo stesso prezzo corrente) così il P&L
+    giornaliero resta coerente con quello che succede davvero sul conto, e
+    blocchiamo nuovi segnali/posizioni per il resto della sessione odierna.
+    """
+    if state["session_closed_today"]:
+        return
+    now_local = datetime.now(ZoneInfo(CFG["timezone"]))
+    close_at = now_local.replace(
+        hour=CFG["platform_close_hour"], minute=CFG["platform_close_minute"], second=0, microsecond=0
+    )
+    if now_local < close_at:
+        return
+
+    open_trade = next((t for t in state["trades"] if t["open"]), None)
+    if open_trade:
+        diff = (price - open_trade["entry"]) if open_trade["dir"] == "BUY" else (open_trade["entry"] - price)
+        pnl = diff * open_trade["lots"] * OZ_PER_LOT
+        open_trade["open"] = False
+        open_trade["exit"] = price
+        open_trade["pnl"] = pnl
+        tg_send(
+            f"🔒 Chiusura automatica piattaforma (20:58)\n"
+            f"Posizione {open_trade['dir']} chiusa @ {price:.2f} — P&L: {pnl:+.2f}$"
+        )
+    state["session_closed_today"] = True
+    print("[sessione chiusa] oltre l'orario di chiusura piattaforma, segnali sospesi fino a domani.")
 
 
 def handle_command(state, text, price):
@@ -166,8 +207,9 @@ def handle_command(state, text, price):
     cmd = parts[0].lower()
 
     if cmd == "/apri":
-        if state["day_status"] != "active":
-            tg_send("⛔ Governatore di rischio non attivo oggi: nuove posizioni bloccate.")
+        if not trading_allowed(state):
+            reason = "sessione chiusa dalla piattaforma (dopo le 20:58)" if state["session_closed_today"] else "governatore di rischio non attivo oggi"
+            tg_send(f"⛔ Nuove posizioni bloccate: {reason}.")
             return
         if len(parts) < 2 or parts[1].upper() not in ("BUY", "SELL"):
             tg_send("Uso: /apri BUY|SELL [prezzo] [lotti]")
@@ -203,7 +245,9 @@ def handle_command(state, text, price):
             f"📊 Stato giornaliero\n"
             f"Prezzo attuale: {price:.2f}\n"
             f"P&L oggi: {pnl:+.2f}$ (stop -{CFG['daily_stop']:.0f}$ / target +{CFG['daily_target']:.0f}$)\n"
-            f"Stato: {state['day_status']}\n"
+            f"Stato: {state['day_status']}"
+            + (" (sessione chiusa dalla piattaforma)" if state["session_closed_today"] else "")
+            + "\n"
         )
         msg += (f"Posizione aperta: {open_trade['dir']} @ {open_trade['entry']:.2f} (flottante {floating:+.2f}$)"
                 if open_trade else "Nessuna posizione aperta.")
@@ -225,6 +269,8 @@ def run_once():
     resp.raise_for_status()
     price = float(resp.json()["price"])
     print(f"Prezzo XAU/USD: {price:.2f}")
+
+    enforce_platform_close(state, price)
 
     bucket_sec = CFG["bucket_seconds"]
     now_bucket = math.floor(time.time() / bucket_sec) * bucket_sec
