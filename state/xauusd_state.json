@@ -1,8 +1,9 @@
 {
-  "day": "2026-08-08",
+  "day": "2026-08-09",
   "day_status": "active",
-  "session_closed_today": true,
+  "session_closed_today": false,
   "closes": [
+    4343.299805,
     4343.299805,
     4343.299805,
     4343.299805,
@@ -17,7 +18,7 @@
     4343.299805,
     4343.299805
   ],
-  "bucket_start": 1786231800,
+  "bucket_start": 1786235400,
   "bucket_o": 4343.299805,
   "bucket_h": 4343.299805,
   "bucket_l": 4343.299805,
