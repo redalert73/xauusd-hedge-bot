@@ -1,7 +1,7 @@
 {
-  "day": "2026-08-09",
+  "day": "2026-08-10",
   "day_status": "active",
-  "session_closed_today": true,
+  "session_closed_today": false,
   "closes": [
     4343.299805,
     4343.299805,
@@ -47,14 +47,15 @@
     4343.299805,
     4344.299805,
     4343.700195,
-    4348.100098
+    4348.100098,
+    4343.200195
   ],
-  "bucket_start": 1786318200,
-  "bucket_o": 4343.200195,
-  "bucket_h": 4343.200195,
-  "bucket_l": 4343.200195,
-  "bucket_c": 4343.200195,
+  "bucket_start": 1786321800,
+  "bucket_o": 4338.700195,
+  "bucket_h": 4338.700195,
+  "bucket_l": 4338.700195,
+  "bucket_c": 4338.700195,
   "trades": [],
-  "last_signal_key": "BUY-43",
+  "last_signal_key": "SELL-47",
   "telegram_offset": 0
 }
