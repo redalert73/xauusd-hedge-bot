@@ -51,14 +51,15 @@
     4343.200195,
     4338.700195,
     4321.899902,
-    4339.899902
+    4339.899902,
+    4346.100098
   ],
-  "bucket_start": 1786341600,
-  "bucket_o": 4346.100098,
-  "bucket_h": 4346.100098,
-  "bucket_l": 4346.100098,
-  "bucket_c": 4346.100098,
+  "bucket_start": 1786348800,
+  "bucket_o": 4354.799805,
+  "bucket_h": 4354.799805,
+  "bucket_l": 4354.799805,
+  "bucket_c": 4354.799805,
   "trades": [],
-  "last_signal_key": "SELL-47",
+  "last_signal_key": "BUY-51",
   "telegram_offset": 0
 }
