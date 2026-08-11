@@ -86,13 +86,14 @@
     4364.299805,
     4372.600098,
     4371.299805,
-    4369.100098
+    4369.100098,
+    4377.5
   ],
-  "bucket_start": 1786485600,
-  "bucket_o": 4377.5,
-  "bucket_h": 4377.5,
-  "bucket_l": 4377.5,
-  "bucket_c": 4377.5,
+  "bucket_start": 1786489200,
+  "bucket_o": 4365.899902,
+  "bucket_h": 4365.899902,
+  "bucket_l": 4365.899902,
+  "bucket_c": 4365.899902,
   "trades": [],
   "last_signal_key": "SELL-84",
   "telegram_offset": 0
