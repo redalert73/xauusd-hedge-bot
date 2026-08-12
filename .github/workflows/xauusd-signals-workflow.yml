@@ -1,43 +1,49 @@
-name: XAUUSD Hedge Risk Signals
+name: Send Telegram Trading Signal
 
 on:
-  schedule:
-    # Ogni 30 minuti. Il minimo consentito da GitHub Actions è 5 minuti,
-    # ma con 30 minuti si resta comodamente dentro le 2000 minuti gratuite
-    # al mese di un repository privato. Vedi note nel README.
-    - cron: "*/30 * * * *"
-  workflow_dispatch: {}  # permette di lanciarlo manualmente da GitHub per testare
+  # Attivazione manuale da interfaccia GitHub Actions
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: 'Direzione Ordine (BUY/SELL)'
+        required: true
+        default: 'BUY'
+        type: choice
+        options:
+          - BUY
+          - SELL
+      price:
+        description: 'Prezzo d'Ingresso XAU/USD'
+        required: true
+        type: string
 
-permissions:
-  contents: write  # necessario per ricommittare il file di stato
+  # Attivazione remota tramite Webhook / API
+  repository_dispatch:
+    types: [tradingview_alert]
 
 jobs:
-  run-bot:
+  send-signal:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout del repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Configurazione Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: Installazione Dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run signal check
+      - name: Esecuzione Script Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LOT_SIZE: "1.04"
-          DAILY_STOP: "2700"
-          DAILY_TARGET: "3000"
-          BUCKET_SECONDS: "1800"
-        run: python xauusd_signals_action.py
-
-      - name: Commit updated state
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Aggiorna stato bot XAUUSD"
-          file_pattern: "state/xauusd_state.json"
+          SIGNAL_DIRECTION: ${{ github.event.inputs.direction || github.event.client_payload.direction }}
+          SIGNAL_PRICE: ${{ github.event.inputs.price || github.event.client_payload.price }}
+        run: |
+          python xauusd_signal.py "$SIGNAL_DIRECTION" "$SIGNAL_PRICE"
