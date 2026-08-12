@@ -95,13 +95,14 @@
     4400.100098,
     4411.399902,
     4415.5,
-    4416.600098
+    4416.600098,
+    4414.700195
   ],
-  "bucket_start": 1786534200,
-  "bucket_o": 4414.700195,
-  "bucket_h": 4414.700195,
-  "bucket_l": 4414.700195,
-  "bucket_c": 4414.700195,
+  "bucket_start": 1786537800,
+  "bucket_o": 4418.0,
+  "bucket_h": 4418.0,
+  "bucket_l": 4418.0,
+  "bucket_c": 4418.0,
   "trades": [],
   "last_signal_key": "BUY-88",
   "telegram_offset": 0
