@@ -1,125 +1,168 @@
 import json
 import os
-import sys
-from pathlib import Path
 import requests
+import yfinance as yf
 
-# Secrets impostati nel repository GitHub
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-STATE_PATH = Path("state/xauusd_state.json")
+# Parametri e Costanti
+STATE_FILE = "state/xauusd_state.json"
+SL_DISTANCE = 25.96  # Produce lo Stop Loss di -$2.700 USD su 1.04 lotti
+TP_DISTANCE = 28.85  # Produce il Take Profit di +$3.000 USD su 1.04 lotti
+LOT_SIZE = 1.04
 
-# Parametri fissi per 1.04 lotti su XAU/USD
-SL_DISTANCE = 25.96  # Target SL -$2.700 USD
-TP_DISTANCE = 28.85  # Target TP +$3.000 USD
-LOOKBACK = 20        # Periodo per verificare rottura minimi/massimi
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def load_state():
-    if not STATE_PATH.exists():
-        print(f"Errore: File {STATE_PATH} non trovato.")
-        return None
+
+def fetch_latest_gold_price():
+    """Scarica la quotazione dell'Oro in tempo reale da Yahoo Finance."""
     try:
-        with open(STATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+        ticker = yf.Ticker("XAUUSD=X")
+        data = ticker.history(period="1d", interval="1m")
+        if data.empty:
+            # Fallback sui Futures dell'Oro se il ticker spot principale risponde vuoto
+            ticker = yf.Ticker("GC=F")
+            data = ticker.history(period="1d", interval="1m")
+
+        latest_price = round(float(data["Close"].iloc[-1]), 2)
+        return latest_price
     except Exception as e:
-        print(f"Errore lettura state JSON: {e}")
+        print(f"Errore durante il download del prezzo: {e}")
         return None
 
-def save_state(state):
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
 
-def send_telegram_signal(direction: str, entry_price: float) -> bool:
-    if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID non configurati nei Secret di GitHub.")
-        sys.exit(1)
+def load_and_update_state(price):
+    """Carica lo stato attuale e aggiunge il nuovo prezzo memorizzando fino a 50 candele."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
 
-    direction_clean = direction.upper().strip()
-
-    if direction_clean == "BUY":
-        sl = round(entry_price - SL_DISTANCE, 2)
-        tp = round(entry_price + TP_DISTANCE, 2)
-    elif direction_clean == "SELL":
-        sl = round(entry_price + SL_DISTANCE, 2)
-        tp = round(entry_price - TP_DISTANCE, 2)
-    else:
-        print(f"Direzione non valida: {direction}")
-        sys.exit(1)
-
-    message = (
-        f"🚨 **SEGNALE OPERATIVO XAU/USD** 🚨\n\n"
-        f"**Strumento:** XAUUSD\n"
-        f"**Ordine:** {direction_clean}\n"
-        f"**Lotti:** 1.04\n"
-        f"**Ingresso:** {entry_price:.2f}\n"
-        f"**Stop Loss:** {sl:.2f} (-$25.96)\n"
-        f"**Take Profit:** {tp:.2f} (+$28.85)\n\n"
-        f"⚠️ *Setup Target SL* - Inserimento immediato"
-    )
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
+    state = {
+        "closes": [],
+        "last_signal_price": None,
+        "last_signal_direction": None,
     }
 
-    response = requests.post(url, json=payload)
-    if response.status_code == 200:
-        print(f"Segnale {direction_clean} inviato con successo a Telegram.")
-        return True
-    else:
-        print(f"Errore invio Telegram: {response.text}")
-        return False
-
-def analyze_market_and_trigger():
-    """Legge lo stato, calcola l'innesco Anti-Trend e aggiorna il file JSON."""
-    state = load_state()
-    if not state:
-        return
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                state = json.load(f)
+        except json.JSONDecodeError:
+            pass
 
     closes = state.get("closes", [])
-    if len(closes) < LOOKBACK:
-        print("Dati insufficienti nell'array 'closes' per analizzare il mercato.")
+    if price is not None:
+        closes.append(price)
+        closes = closes[-50:]  # Mantiene solo le ultime 50 letture
+        state["closes"] = closes
+
+    return state
+
+
+def save_state(state):
+    """Salva lo stato aggiornato nel file JSON."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=4)
+
+
+def send_telegram_message(message):
+    """Invia il messaggio di segnale al canale/chat Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print(
+            "ERRORE: Credentials Telegram assenti nelle variabili d'ambiente."
+        )
         return
 
-    current_price = closes[-1]
-    recent_closes = closes[-LOOKBACK:-1]
-    donchian_high = max(recent_closes)
-    donchian_low = min(recent_closes)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+    }
+
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("Notifica Telegram inviata correttamente!")
+        else:
+            print(f"Errore invio Telegram: {res.text}")
+    except Exception as e:
+        print(f"Eccezione durante la connessione a Telegram: {e}")
+
+
+def main():
+    # 1. Recupera il prezzo aggiornato
+    current_price = fetch_latest_gold_price()
+    if current_price is None:
+        print("Impossibile procedere senza prezzo di mercato.")
+        return
+
+    print(f"Prezzo corrente XAU/USD registrato: {current_price}")
+
+    # 2. Aggiorna e salva la cronologia
+    state = load_and_update_state(current_price)
+    save_state(state)
+
+    closes = state.get("closes", [])
+
+    if len(closes) < 20:
+        print(
+            f"Storico insufficiente per il Donchian Channel ({len(closes)}/20). In attesa di nuove esecuzioni."
+        )
+        return
+
+    # 3. Calcolo Donchian sui 19 periodi precedenti
+    previous_closes = closes[-20:-1]
+    donchian_low = min(previous_closes)
+    donchian_high = max(previous_closes)
+
+    print(
+        f"Donchian Low (19p): {donchian_low} | Donchian High (19p): {donchian_high}"
+    )
 
     signal_direction = None
+    sl_price = 0.0
+    tp_price = 0.0
 
-    # LOGICA TARGET SL (ANTI-TREND):
-    # 1. Compra se il prezzo crolla sotto i minimi receni -> l'inerzia spinge verso lo SL (-$25.96)
+    # 4. Logica Anti-Trend
     if current_price < donchian_low:
         signal_direction = "BUY"
-    # 2. Vendi se il prezzo esplode sopra i massimi recenti -> l'inerzia spinge verso lo SL (-$25.96)
+        sl_price = round(current_price - SL_DISTANCE, 2)
+        tp_price = round(current_price + TP_DISTANCE, 2)
     elif current_price > donchian_high:
         signal_direction = "SELL"
-
-    if not signal_direction:
-        print("Nessun breakout contrario rilevato. Nessun segnale da inviare.")
+        sl_price = round(current_price + SL_DISTANCE, 2)
+        tp_price = round(current_price - TP_DISTANCE, 2)
+    else:
+        print("Prezzo all'interno del range: nessun breakout contrario.")
         return
 
-    # Evita di inviare segnali duplicati per la stessa condizione
-    signal_key = f"{signal_direction}-{round(current_price, 2)}"
-    if state.get("last_signal_key") == signal_key:
-        print("Segnale già inviato in precedenza per questa condizione.")
+    # 5. Evita messaggi duplicati sullo stesso livello
+    if (
+        state.get("last_signal_price") == current_price
+        and state.get("last_signal_direction") == signal_direction
+    ):
+        print("Segnale già notificato in precedenza per questo valore.")
         return
 
-    # Invia notifica e aggiorna lo stato
-    if send_telegram_signal(signal_direction, current_price):
-        state["last_signal_key"] = signal_key
-        save_state(state)
+    # Salva il nuovo segnale nello stato
+    state["last_signal_price"] = current_price
+    state["last_signal_direction"] = signal_direction
+    save_state(state)
+
+    # 6. Formattazione e invio
+    emoji = "🟢" if signal_direction == "BUY" else "🔴"
+    message = (
+        f"{emoji} *SEGNALE ANTI-TREND XAU/USD* {emoji}\n\n"
+        f"• *Ordine:* `{signal_direction}`\n"
+        f"• *Lotti:* `{LOT_SIZE}`\n"
+        f"• *Prezzo Segnale:* `{current_price}`\n\n"
+        f"🎯 *Take Profit (+3000 USD):* `{tp_price}` (+${TP_DISTANCE})\n"
+        f"🛑 *Stop Loss (-2700 USD):* `{sl_price}` (-${SL_DISTANCE})\n\n"
+        f"⚠️ *Istruzione Istantanea:* Apri subito l'ordine a mercato. "
+        f"Se il prezzo varia prima dell'ingresso, rispetta sempre **${SL_DISTANCE}** di distanza dallo SL dal prezzo a cui sei entrato!"
+    )
+
+    send_telegram_message(message)
+
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3:
-        # Modalità invio manuale da riga di comando
-        input_direction = sys.argv[1]
-        input_price = float(sys.argv[2])
-        send_telegram_signal(input_direction, input_price)
-    else:
-        # Modalità automatica tramite analisi dello stato
-        analyze_market_and_trigger()
+    main()
