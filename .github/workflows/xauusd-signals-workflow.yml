@@ -1,4 +1,4 @@
-name: XAUUSD Anti-Trend Signal Bot
+#name: XAUUSD Anti-Trend Signal Bot
 
 on:
   workflow_dispatch:
