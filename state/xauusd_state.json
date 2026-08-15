@@ -3,7 +3,6 @@
     "day_status": "active",
     "session_closed_today": false,
     "closes": [
-        4435.1,
         4430.0,
         4431.7,
         4428.3,
@@ -52,6 +51,7 @@
         4437.3,
         4437.3,
         4437.3,
+        4375.6,
         4375.6
     ],
     "bucket_start": 1786557600,
