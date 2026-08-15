@@ -1,7 +1,6 @@
 import json
 import os
 import requests
-import yfinance as yf
 
 # Parametri e Costanti
 STATE_FILE = "state/xauusd_state.json"
@@ -11,22 +10,31 @@ LOT_SIZE = 1.04
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 
 def fetch_latest_gold_price():
-    """Scarica la quotazione dell'Oro in tempo reale da Yahoo Finance."""
-    try:
-        ticker = yf.Ticker("XAUUSD=X")
-        data = ticker.history(period="1d", interval="1m")
-        if data.empty:
-            # Fallback sui Futures dell'Oro se il ticker spot principale risponde vuoto
-            ticker = yf.Ticker("GC=F")
-            data = ticker.history(period="1d", interval="1m")
+    """Recupera il prezzo Spot reale di XAU/USD da Twelve Data API in tempo reale."""
+    if not TWELVE_DATA_API_KEY:
+        print(
+            "ERRORE: Manca la chiave TWELVE_DATA_API_KEY nei Secrets di GitHub."
+        )
+        return None
 
-        latest_price = round(float(data["Close"].iloc[-1]), 2)
-        return latest_price
+    url = f"https://api.twelvedata.com/price?symbol=XAU/USD&apikey={TWELVE_DATA_API_KEY}"
+
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+
+        if "price" in data:
+            price = round(float(data["price"]), 2)
+            return price
+        else:
+            print(f"Errore risposta API Twelve Data: {data}")
+            return None
     except Exception as e:
-        print(f"Errore durante il download del prezzo: {e}")
+        print(f"Errore durante la connessione all'API Twelve Data: {e}")
         return None
 
 
@@ -50,7 +58,7 @@ def load_and_update_state(price):
     closes = state.get("closes", [])
     if price is not None:
         closes.append(price)
-        closes = closes[-50:]  # Mantiene solo le ultime 50 letture
+        closes = closes[-50:]  # Mantiene fino alle ultime 50 letture
         state["closes"] = closes
 
     return state
@@ -89,13 +97,13 @@ def send_telegram_message(message):
 
 
 def main():
-    # 1. Recupera il prezzo aggiornato
+    # 1. Recupera il prezzo spot in tempo reale
     current_price = fetch_latest_gold_price()
     if current_price is None:
-        print("Impossibile procedere senza prezzo di mercato.")
+        print("Impossibile procedere senza prezzo di mercato spot aggiornato.")
         return
 
-    print(f"Prezzo corrente XAU/USD registrato: {current_price}")
+    print(f"Prezzo corrente XAU/USD Spot registrato: {current_price}")
 
     # 2. Aggiorna e salva la cronologia
     state = load_and_update_state(current_price)
@@ -154,7 +162,7 @@ def main():
         f"{emoji} *SEGNALE ANTI-TREND XAU/USD* {emoji}\n\n"
         f"• *Ordine:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
-        f"• *Prezzo Segnale:* `{current_price}`\n\n"
+        f"• *Prezzo Segnale (Spot):* `{current_price}`\n\n"
         f"🎯 *Take Profit (+3000 USD):* `{tp_price}` (+${TP_DISTANCE})\n"
         f"🛑 *Stop Loss (-2700 USD):* `{sl_price}` (-${SL_DISTANCE})\n\n"
         f"⚠️ *Istruzione Istantanea:* Apri subito l'ordine a mercato. "
