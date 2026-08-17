@@ -16,7 +16,6 @@
         4375.6,
         4375.6,
         4375.6,
-        4375.6,
         4375.62,
         4375.6,
         4375.6,
@@ -52,7 +51,8 @@
         4393.48,
         4388.66,
         4403.73,
-        4414.62
+        4414.62,
+        4418.72
     ],
     "bucket_start": 1786557600,
     "bucket_o": 4406.600098,
@@ -62,6 +62,6 @@
     "trades": [],
     "last_signal_key": "BUY-88",
     "telegram_offset": 0,
-    "last_signal_price": 4414.62,
+    "last_signal_price": 4418.72,
     "last_signal_direction": "SELL"
 }
