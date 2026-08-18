@@ -3,7 +3,6 @@
     "day_status": "active",
     "session_closed_today": false,
     "closes": [
-        4421.26,
         4418.52,
         4426.35,
         4425.56,
@@ -52,7 +51,8 @@
         4359.01,
         4356.54,
         4354.45,
-        4343.67
+        4343.67,
+        4342.54
     ],
     "bucket_start": 1786557600,
     "bucket_o": 4406.600098,
@@ -62,6 +62,6 @@
     "trades": [],
     "last_signal_key": "BUY-88",
     "telegram_offset": 0,
-    "last_signal_price": 4343.67,
+    "last_signal_price": 4342.54,
     "last_signal_direction": "BUY"
 }
