@@ -15,12 +15,11 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 
 def fetch_ohlcv_data():
-    """Recupera le ultime 100 candele a 15 minuti da Twelve Data per calcolare Liquidity e POC."""
+    """Recupera le ultime 100 candele a 15 minuti da Twelve Data per calcolare Liquidity, POC e RVOL."""
     if not TWELVE_DATA_API_KEY:
         print("ERRORE: Manca la chiave TWELVE_DATA_API_KEY nei Secrets.")
         return None
 
-    # Utilizziamo l'endpoint time_series per ottenere Open, High, Low, Close, Volume
     url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=15min&outputsize=100&apikey={TWELVE_DATA_API_KEY}"
 
     try:
@@ -30,7 +29,7 @@ def fetch_ohlcv_data():
         if "values" in data:
             df = pd.DataFrame(data["values"])
             
-            # Twelve Data fornisce i dati in ordine decrescente (il più recente in cima). Li invertiamo.
+            # Twelve Data fornisce i dati in ordine decrescente. Li invertiamo.
             df = df.iloc[::-1].reset_index(drop=True)
             
             # Convertiamo le stringhe in valori numerici
@@ -40,7 +39,7 @@ def fetch_ohlcv_data():
             if 'volume' in df.columns:
                 df['volume'] = pd.to_numeric(df['volume'])
             else:
-                df['volume'] = 1.0  # Fallback se il volume tick non è disponibile
+                df['volume'] = 1.0  # Fallback di sicurezza
                 
             return df
         else:
@@ -56,12 +55,10 @@ def calculate_poc(df):
     volume_profile = {}
     
     for index, row in df.iterrows():
-        # Utilizziamo il prezzo tipico approssimato per raggruppare i volumi
         typical_price = round((row['high'] + row['low'] + row['close']) / 3, 1)
         vol = row['volume']
         volume_profile[typical_price] = volume_profile.get(typical_price, 0) + vol
         
-    # Il POC è il livello di prezzo con la somma di volumi maggiore
     poc_price = max(volume_profile, key=volume_profile.get)
     return poc_price
 
@@ -71,18 +68,15 @@ def get_structural_liquidity(df, window=4):
     swing_lows = []
     swing_highs = []
     
-    # Escludiamo l'ultima candela (in formazione)
     storico = df.iloc[:-1]
     
     for i in range(window, len(storico) - window):
         current_low = storico['low'].iloc[i]
         current_high = storico['high'].iloc[i]
         
-        # È uno Swing Low se è il minimo assoluto rispetto alle N candele prima e dopo
         is_low = all(current_low <= storico['low'].iloc[i-j] for j in range(1, window+1)) and \
                  all(current_low <= storico['low'].iloc[i+j] for j in range(1, window+1))
                  
-        # È uno Swing High se è il massimo assoluto rispetto alle N candele prima e dopo
         is_high = all(current_high >= storico['high'].iloc[i-j] for j in range(1, window+1)) and \
                   all(current_high >= storico['high'].iloc[i+j] for j in range(1, window+1))
                   
@@ -91,7 +85,6 @@ def get_structural_liquidity(df, window=4):
         if is_high:
             swing_highs.append(current_high)
             
-    # Prendiamo i livelli di liquidità più estremi registrati di recente
     major_liquidity_low = min(swing_lows) if swing_lows else storico['low'].min()
     major_liquidity_high = max(swing_highs) if swing_highs else storico['high'].max()
     
@@ -126,17 +119,29 @@ def send_telegram_message(message):
 
 
 def main():
-    # 1. Recupero Dati Strutturali
+    # 1. Recupero Dati
     df = fetch_ohlcv_data()
     if df is None or df.empty:
         print("Impossibile scaricare le candele.")
         return
 
+    # Calcolo Volume SMA (Media Mobile a 20 periodi dei Volumi) per il Relative Volume
+    df['vol_sma_20'] = df['volume'].rolling(window=20).mean()
+
+    # Preleviamo i dati dell'ultima candela disponibile
     current_price = df['close'].iloc[-1]
+    current_volume = df['volume'].iloc[-1]
+    avg_volume = df['vol_sma_20'].iloc[-1]
+    
     poc_price = calculate_poc(df)
     liq_low, liq_high = get_structural_liquidity(df)
 
+    # Condizione: Il volume attuale deve essere superiore alla media delle ultime 20 candele
+    is_high_volume = current_volume > avg_volume
+
     print(f"Prezzo Attuale: {current_price}")
+    print(f"Volume Attuale: {current_volume} | Volume Medio (SMA 20): {avg_volume}")
+    print(f"Spike Volumi Rilevato: {'SI' if is_high_volume else 'NO'}")
     print(f"POC (Point of Control): {poc_price}")
     print(f"Liquidità Inferiore (Sweep Low): {liq_low}")
     print(f"Liquidità Superiore (Sweep High): {liq_high}")
@@ -145,21 +150,21 @@ def main():
     sl_price = 0.0
     tp_price = 0.0
 
-    # 2. Logica Anti-Trend Avanzata (Liquidity Sweep + POC Check)
-    # BUY: Rompe la liquidità inferiore (crollo) E il POC è sopra (schiaccia il prezzo verso lo SL)
-    if current_price < liq_low and current_price < poc_price:
+    # 2. Logica Anti-Trend Avanzata (Liquidity + POC + Relative Volume)
+    # BUY: Crollo sotto liquidità E POC sovrastante E Volume superiore alla media
+    if current_price < liq_low and current_price < poc_price and is_high_volume:
         signal_direction = "BUY"
         sl_price = round(current_price - SL_DISTANCE, 2)
         tp_price = round(current_price + TP_DISTANCE, 2)
         
-    # SELL: Rompe la liquidità superiore (esplosione) E il POC è sotto (spinge il prezzo su verso lo SL)
-    elif current_price > liq_high and current_price > poc_price:
+    # SELL: Esplosione sopra liquidità E POC sottostante E Volume superiore alla media
+    elif current_price > liq_high and current_price > poc_price and is_high_volume:
         signal_direction = "SELL"
         sl_price = round(current_price + SL_DISTANCE, 2)
         tp_price = round(current_price - TP_DISTANCE, 2)
         
     else:
-        print("Nessuno sweep di liquidità in corso o discordanza con il POC. Standby.")
+        print("Condizioni mancanti (Sweep, POC o Spike Volumi). Standby.")
         return
 
     # 3. Controllo Duplicati
@@ -172,16 +177,17 @@ def main():
     state["last_signal_direction"] = signal_direction
     save_state(state)
 
-    # 4. Invio Telegram
+    # 4. Formattazione Invio Telegram
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE STRUTTURALE XAU/USD* {emoji}\n\n"
+        f"{emoji} *SEGNALE STRUTTURALE + VOLUMI XAU/USD* {emoji}\n\n"
         f"• *Ordine:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
         f"• *Prezzo Attuale:* `{current_price}`\n\n"
-        f"📊 *Analisi Indicatori:*\n"
-        f"• *POC:* `{poc_price}`\n"
-        f"• *Sweep Liquidity:* Il prezzo ha rotto il livello `{liq_low if signal_direction == 'BUY' else liq_high}`\n\n"
+        f"📊 *Conferme Indicatori:*\n"
+        f"• *Sweep Liquidity:* Rottura livello `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
+        f"• *POC:* `{poc_price}` (Schiaccia il prezzo)\n"
+        f"• *Spike Volumi:* `SI` (Volume superiore alla SMA 20)\n\n"
         f"🎯 *Take Profit (+3000 USD):* `{tp_price}`\n"
         f"🛑 *Stop Loss (-2700 USD):* `{sl_price}`\n\n"
         f"⚠️ *Nota Operativa:* Rispetta sempre i **${SL_DISTANCE}** di distanza dallo SL dal prezzo a cui entri a mercato!"
