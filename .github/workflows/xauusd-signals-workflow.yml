@@ -3,7 +3,7 @@ name: XAUUSD Anti-Trend Signal Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'  # Esegue ogni 15 minuti
+    - cron: '*/5 * * * *'  # Esegue la scansione ogni 5 minuti
 
 permissions:
   contents: write
