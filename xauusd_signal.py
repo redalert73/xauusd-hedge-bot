@@ -18,10 +18,10 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 
 def is_within_trading_hours():
-    """Verifica operatività (06:00 - 18:00 ora italiana)."""
+    """Verifica operatività (06:00 - 20:00 ora italiana)."""
     rome_tz = ZoneInfo("Europe/Rome")
     now_rome = datetime.now(rome_tz)
-    return 6 <= now_rome.hour < 18
+    return 6 <= now_rome.hour < 20
 
 
 def fetch_ohlcv_data():
@@ -30,7 +30,6 @@ def fetch_ohlcv_data():
         print("ERRORE: Manca la chiave API nei Secrets.")
         return None
 
-    # Cambiato a 5min per allineamento perfetto con il Cron di GitHub
     url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=100&apikey={TWELVE_DATA_API_KEY}"
 
     try:
@@ -56,20 +55,15 @@ def fetch_ohlcv_data():
 
 def calculate_indicators(df):
     """Calcola ATR, POC, SMA Volumi e la EMA 50 per il trend di fondo."""
-    # ATR 14
     high_low = df["high"] - df["low"]
     high_close = (df["high"] - df["close"].shift()).abs()
     low_close = (df["low"] - df["close"].shift()).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df["atr"] = tr.rolling(window=14).mean()
 
-    # EMA 50 (Filtro Trend di Fondo)
     df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
-    
-    # Volume SMA 20
     df["vol_sma_20"] = df["volume"].rolling(window=20).mean()
 
-    # POC
     volume_profile = {}
     for index, row in df.iterrows():
         typical_price = round((row["high"] + row["low"] + row["close"]) / 3, 1)
@@ -128,7 +122,7 @@ def send_telegram_message(message):
 
 def main():
     if not is_within_trading_hours():
-        print("Fuori fascia oraria 06:00 - 18:00.")
+        print("Fuori fascia oraria 06:00 - 20:00.")
         return
 
     df = fetch_ohlcv_data()
@@ -138,7 +132,6 @@ def main():
     df, poc_price = calculate_indicators(df)
     liq_low, liq_high = get_structural_liquidity(df)
 
-    # Dati ultima candela
     current_price = df["close"].iloc[-1]
     current_open = df["open"].iloc[-1]
     current_volume = df["volume"].iloc[-1]
@@ -146,11 +139,9 @@ def main():
     current_atr = df["atr"].iloc[-1]
     current_ema = df["ema_50"].iloc[-1]
 
-    # Condizioni
     is_high_volume = current_volume > avg_volume
     is_volatile = current_atr >= MIN_ATR_THRESHOLD
     
-    # Conferma direzionale: per fare danni al tuo conto, la candela deve spingere forte e il trend deve essere avverso
     is_red_candle = current_price < current_open
     is_green_candle = current_price > current_open
     bearish_trend = current_price < current_ema
@@ -161,14 +152,12 @@ def main():
 
     signal_direction = None
 
-    # BUY ASSASSINO: Mercato crolla (Sotto Liq Low, POC spinge giù, Trend ribassista, Candela rossa, Volumi e ATR alti)
     if (current_price < liq_low and current_price < poc_price and 
         is_high_volume and is_volatile and bearish_trend and is_red_candle):
         signal_direction = "BUY"
         sl_price = round(current_price - SL_DISTANCE, 2)
         tp_price = round(current_price + TP_DISTANCE, 2)
 
-    # SELL ASSASSINO: Mercato esplode (Sopra Liq High, POC spinge su, Trend rialzista, Candela verde, Volumi e ATR alti)
     elif (current_price > liq_high and current_price > poc_price and 
           is_high_volume and is_volatile and bullish_trend and is_green_candle):
         signal_direction = "SELL"
