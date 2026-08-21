@@ -10,7 +10,9 @@ STATE_FILE = "state/xauusd_state.json"
 SL_DISTANCE = 25.96  # Stop Loss di -$2.700 USD su 1.04 lotti
 TP_DISTANCE = 28.85  # Take Profit di +$3.000 USD su 1.04 lotti
 LOT_SIZE = 1.04
-MIN_ATR_THRESHOLD = 0.60  # Soglia minima volatilità su candela a 5m
+MIN_ATR_THRESHOLD = (
+    0.40  # Abbassato a 0.40 per maggiore flessibilità di volatilità
+)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -43,7 +45,9 @@ def fetch_ohlcv_data():
             for col in ["open", "high", "low", "close"]:
                 df[col] = pd.to_numeric(df[col])
 
-            df["volume"] = pd.to_numeric(df["volume"]) if "volume" in df.columns else 1.0
+            df["volume"] = (
+                pd.to_numeric(df["volume"]) if "volume" in df.columns else 1.0
+            )
             return df
         else:
             print(f"Errore API: {data}")
@@ -66,8 +70,12 @@ def calculate_indicators(df):
 
     volume_profile = {}
     for index, row in df.iterrows():
-        typical_price = round((row["high"] + row["low"] + row["close"]) / 3, 1)
-        volume_profile[typical_price] = volume_profile.get(typical_price, 0) + row["volume"]
+        typical_price = round(
+            (row["high"] + row["low"] + row["close"]) / 3, 1
+        )
+        volume_profile[typical_price] = (
+            volume_profile.get(typical_price, 0) + row["volume"]
+        )
     poc_price = max(volume_profile, key=volume_profile.get)
 
     return df, poc_price
@@ -82,16 +90,30 @@ def get_structural_liquidity(df, window=4):
         current_low = storico["low"].iloc[i]
         current_high = storico["high"].iloc[i]
 
-        if all(current_low <= storico["low"].iloc[i - j] for j in range(1, window + 1)) and \
-           all(current_low <= storico["low"].iloc[i + j] for j in range(1, window + 1)):
+        if all(
+            current_low <= storico["low"].iloc[i - j]
+            for j in range(1, window + 1)
+        ) and all(
+            current_low <= storico["low"].iloc[i + j]
+            for j in range(1, window + 1)
+        ):
             swing_lows.append(current_low)
-            
-        if all(current_high >= storico["high"].iloc[i - j] for j in range(1, window + 1)) and \
-           all(current_high >= storico["high"].iloc[i + j] for j in range(1, window + 1)):
+
+        if all(
+            current_high >= storico["high"].iloc[i - j]
+            for j in range(1, window + 1)
+        ) and all(
+            current_high >= storico["high"].iloc[i + j]
+            for j in range(1, window + 1)
+        ):
             swing_highs.append(current_high)
 
-    major_liquidity_low = min(swing_lows) if swing_lows else storico["low"].min()
-    major_liquidity_high = max(swing_highs) if swing_highs else storico["high"].max()
+    major_liquidity_low = (
+        min(swing_lows) if swing_lows else storico["low"].min()
+    )
+    major_liquidity_high = (
+        max(swing_highs) if swing_highs else storico["high"].max()
+    )
 
     return major_liquidity_low, major_liquidity_high
 
@@ -116,7 +138,11 @@ def send_telegram_message(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+    }
     requests.post(url, json=payload, timeout=10)
 
 
@@ -133,42 +159,41 @@ def main():
     liq_low, liq_high = get_structural_liquidity(df)
 
     current_price = df["close"].iloc[-1]
-    current_open = df["open"].iloc[-1]
     current_volume = df["volume"].iloc[-1]
     avg_volume = df["vol_sma_20"].iloc[-1]
     current_atr = df["atr"].iloc[-1]
     current_ema = df["ema_50"].iloc[-1]
 
-    is_high_volume = current_volume > avg_volume
     is_volatile = current_atr >= MIN_ATR_THRESHOLD
-    
-    is_red_candle = current_price < current_open
-    is_green_candle = current_price > current_open
     bearish_trend = current_price < current_ema
     bullish_trend = current_price > current_ema
 
-    print(f"Prezzo: {current_price} | POC: {poc_price} | EMA50: {round(current_ema, 2)}")
+    print(
+        f"Prezzo: {current_price} | POC: {poc_price} | EMA50: {round(current_ema, 2)}"
+    )
     print(f"Liq Low: {liq_low} | Liq High: {liq_high}")
 
     signal_direction = None
 
-    if (current_price < liq_low and current_price < poc_price and 
-        is_high_volume and is_volatile and bearish_trend and is_red_candle):
+    # Condizioni ammorbidite: focus su Rottura Liquidità, POC, ATR e Trend EMA (senza blocco colore candela o volume forzato)
+    if current_price < liq_low and current_price < poc_price and is_volatile and bearish_trend:
         signal_direction = "BUY"
         sl_price = round(current_price - SL_DISTANCE, 2)
         tp_price = round(current_price + TP_DISTANCE, 2)
 
-    elif (current_price > liq_high and current_price > poc_price and 
-          is_high_volume and is_volatile and bullish_trend and is_green_candle):
+    elif current_price > liq_high and current_price > poc_price and is_volatile and bullish_trend:
         signal_direction = "SELL"
         sl_price = round(current_price + SL_DISTANCE, 2)
         tp_price = round(current_price - TP_DISTANCE, 2)
     else:
-        print("Condizioni di coerenza Anti-Trend non pienamente soddisfatte. Standby.")
+        print("Condizioni di coerenza Anti-Trend non soddisfatte. Standby.")
         return
 
     state = load_state()
-    if state.get("last_signal_price") == current_price and state.get("last_signal_direction") == signal_direction:
+    if (
+        state.get("last_signal_price") == current_price
+        and state.get("last_signal_direction") == signal_direction
+    ):
         return
 
     state["last_signal_price"] = current_price
@@ -177,20 +202,22 @@ def main():
 
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE ANTI-TREND COERENTE* {emoji}\n\n"
+        f"{emoji} *SEGNALE ANTI-TREND OTTIMIZZATO* {emoji}\n\n"
         f"• *Ordine:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
         f"• *Prezzo Attuale:* `{current_price}`\n\n"
-        f"📊 *Filtri Anti-Inversione (OK):*\n"
+        f"📊 *Conferme Tecniche:*\n"
         f"• *Sweep Liquidity:* Rottura `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
-        f"• *POC:* `{poc_price}` (Schiaccia il prezzo)\n"
-        f"• *Trend Base (EMA 50):* `{round(current_ema, 2)}` (A favore del Breakout)\n"
-        f"• *Volume & Volatilità:* Elevati\n\n"
+        f"• *POC:* `{poc_price}`\n"
+        f"• *Trend Base (EMA 50):* `{round(current_ema, 2)}`\n"
+        f"• *Volatilità (ATR):* `{current_atr}` (OK)\n\n"
         f"🎯 *Take Profit (+3000 USD):* `{tp_price}`\n"
         f"🛑 *Stop Loss (-2700 USD):* `{sl_price}`\n\n"
         f"⚠️ *Nota Operativa:* Rispetta sempre i **${SL_DISTANCE}** di distanza dallo SL dal prezzo a cui entri a mercato!"
     )
     send_telegram_message(message)
 
+
 if __name__ == "__main__":
     main()
+        
