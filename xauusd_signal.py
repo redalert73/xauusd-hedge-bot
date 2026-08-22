@@ -7,12 +7,8 @@ import requests
 
 # Parametri e Costanti
 STATE_FILE = "state/xauusd_state.json"
-SL_DISTANCE = 25.96  # Stop Loss di -$2.700 USD su 1.04 lotti
-TP_DISTANCE = 28.85  # Take Profit di +$3.000 USD su 1.04 lotti
 LOT_SIZE = 1.04
-MIN_ATR_THRESHOLD = (
-    0.40  # Abbassato a 0.40 per maggiore flessibilità di volatilità
-)
+MIN_ATR_THRESHOLD = 0.40
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -159,8 +155,8 @@ def main():
     liq_low, liq_high = get_structural_liquidity(df)
 
     current_price = df["close"].iloc[-1]
-    current_volume = df["volume"].iloc[-1]
-    avg_volume = df["vol_sma_20"].iloc[-1]
+    current_low = df["low"].iloc[-1]
+    current_high = df["high"].iloc[-1]
     current_atr = df["atr"].iloc[-1]
     current_ema = df["ema_50"].iloc[-1]
 
@@ -171,20 +167,26 @@ def main():
     print(
         f"Prezzo: {current_price} | POC: {poc_price} | EMA50: {round(current_ema, 2)}"
     )
-    print(f"Liq Low: {liq_low} | Liq High: {liq_high}")
+    print(f"Liq Low: {liq_low} | Liq High: {liq_high} | ATR: {round(current_atr, 2)}")
 
     signal_direction = None
 
-    # Condizioni ammorbidite: focus su Rottura Liquidità, POC, ATR e Trend EMA (senza blocco colore candela o volume forzato)
-    if current_price < liq_low and current_price < poc_price and is_volatile and bearish_trend:
-        signal_direction = "BUY"
-        sl_price = round(current_price - SL_DISTANCE, 2)
-        tp_price = round(current_price + TP_DISTANCE, 2)
+    # Calcolo dinamico di SL e TP basato sull'ATR corrente (es. SL = 2.5 * ATR, TP = 3.0 * ATR)
+    # Assicuriamo comunque una distanza minima di sicurezza
+    sl_distance = max(round(current_atr * 2.5, 2), 20.0)
+    tp_distance = max(round(current_atr * 3.0, 2), 22.0)
 
-    elif current_price > liq_high and current_price > poc_price and is_volatile and bullish_trend:
+    # Condizione BUY: Rottura reale confermata dal minimo o chiusura sotto il livello di liquidità basso
+    if current_low < liq_low and current_price < poc_price and is_volatile and bearish_trend:
+        signal_direction = "BUY"
+        sl_price = round(current_price - sl_distance, 2)
+        tp_price = round(current_price + tp_distance, 2)
+
+    # Condizione SELL: Rottura reale confermata sopra il livello di liquidità alto
+    elif current_high > liq_high and current_price > poc_price and is_volatile and bullish_trend:
         signal_direction = "SELL"
-        sl_price = round(current_price + SL_DISTANCE, 2)
-        tp_price = round(current_price - TP_DISTANCE, 2)
+        sl_price = round(current_price + sl_distance, 2)
+        tp_price = round(current_price - tp_distance, 2)
     else:
         print("Condizioni di coerenza Anti-Trend non soddisfatte. Standby.")
         return
@@ -202,22 +204,20 @@ def main():
 
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE ANTI-TREND OTTIMIZZATO* {emoji}\n\n"
+        f"{emoji} *SEGNALE ANTI-TREND DINAMICO* {emoji}\n\n"
         f"• *Ordine:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
         f"• *Prezzo Attuale:* `{current_price}`\n\n"
-        f"📊 *Conferme Tecniche:*\n"
-        f"• *Sweep Liquidity:* Rottura `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
+        f"📊 *Metriche di Mercato:*\n"
+        f"• *Sweep Liquidity:* Rottura su `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
         f"• *POC:* `{poc_price}`\n"
-        f"• *Trend Base (EMA 50):* `{round(current_ema, 2)}`\n"
-        f"• *Volatilità (ATR):* `{current_atr}` (OK)\n\n"
-        f"🎯 *Take Profit (+3000 USD):* `{tp_price}`\n"
-        f"🛑 *Stop Loss (-2700 USD):* `{sl_price}`\n\n"
-        f"⚠️ *Nota Operativa:* Rispetta sempre i **${SL_DISTANCE}** di distanza dallo SL dal prezzo a cui entri a mercato!"
+        f"• *Volatilità (ATR):* `{round(current_atr, 2)}`\n\n"
+        f"🎯 *Take Profit Dinamico:* `{tp_price}`\n"
+        f"🛑 *Stop Loss Dinamico:* `{sl_price}`\n\n"
+        f"⚠️ *Nota Operativa:* SL e TP sono calcolati dinamicamente sulla volatilità della candela per proteggere il capitale!"
     )
     send_telegram_message(message)
 
 
 if __name__ == "__main__":
     main()
-        
