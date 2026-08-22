@@ -11,11 +11,18 @@ LOT_SIZE = 1.04
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+NTFY_TOPIC = os.getenv(
+    "NTFY_TOPIC", "xauusd_signal_77ax"
+)  # Fallback sul tuo topic
+
+
+def get_current_rome_time():
+    rome_tz = ZoneInfo("Europe/Rome")
+    return datetime.now(rome_tz)
 
 
 def is_within_trading_hours():
-    rome_tz = ZoneInfo("Europe/Rome")
-    now_rome = datetime.now(rome_tz)
+    now_rome = get_current_rome_time()
     return 6 <= now_rome.hour < 20
 
 
@@ -56,7 +63,6 @@ def calculate_indicators(df):
 
 
 def get_structural_liquidity(df, window=3):
-    """Finestra stretta per massimizzare i falsi breakout."""
     storico = df.iloc[:-1]
     swing_lows = []
     swing_highs = []
@@ -101,7 +107,11 @@ def load_state():
                 return json.load(f)
             except json.JSONDecodeError:
                 pass
-    return {"last_signal_price": None, "last_signal_direction": None}
+    return {
+        "last_signal_price": None,
+        "last_signal_direction": None,
+        "last_signal_date": None,
+    }
 
 
 def save_state(state):
@@ -109,21 +119,49 @@ def save_state(state):
         json.dump(state, f, indent=4)
 
 
-def send_telegram_message(message):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-    }
-    requests.post(url, json=payload, timeout=10)
+def send_notifications(message_md):
+    # 1. Invio su Telegram
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        url_tg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload_tg = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message_md,
+            "parse_mode": "Markdown",
+        }
+        try:
+            requests.post(url_tg, json=payload_tg, timeout=10)
+        except Exception as e:
+            print(f"Errore invio Telegram: {e}")
+
+    # 2. Invio su ntfy.sh (Bypassa qualsiasi blocco di notifica Android)
+    if NTFY_TOPIC:
+        url_ntfy = f"https://ntfy.sh/{NTFY_TOPIC}"
+        try:
+            requests.post(
+                url_ntfy,
+                data=message_md.encode("utf-8"),
+                headers={
+                    "Title": "🚨 Segnale XAU/USD Attivato",
+                    "Tags": "moneybag,chart_with_upwards_trend",
+                    "Priority": "urgent",
+                },
+                timeout=10,
+            )
+        except Exception as e:
+            print(f"Errore invio ntfy: {e}")
 
 
 def main():
     if not is_within_trading_hours():
         print("Fuori fascia oraria.")
+        return
+
+    now_rome = get_current_rome_time()
+    today_str = now_rome.strftime("%Y-%m-%d")
+
+    state = load_state()
+    if state.get("last_signal_date") == today_str:
+        print("⚠️ Un segnale è già stato eseguito oggi. Stop operativo.")
         return
 
     df = fetch_ohlcv_data()
@@ -146,7 +184,6 @@ def main():
     sl_distance = max(round(current_atr * 2.0, 2), 18.0)
     tp_distance = max(round(current_atr * 2.5, 2), 22.0)
 
-    # Condizioni di breakout reattivo (quelle testate che colpiscono lo SL)
     if current_low < liq_low:
         signal_direction = "BUY"
         sl_price = round(current_price - sl_distance, 2)
@@ -158,27 +195,22 @@ def main():
     else:
         return
 
-    state = load_state()
-    if (
-        state.get("last_signal_price") == current_price
-        and state.get("last_signal_direction") == signal_direction
-    ):
-        return
-
     state["last_signal_price"] = current_price
     state["last_signal_direction"] = signal_direction
+    state["last_signal_date"] = today_str
     save_state(state)
 
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE XAU/USD (BREAKOUT TARGET)* {emoji}\n\n"
-        f"• *Direzione:* `{signal_direction}`\n"
-        f"• *Lotti:* `{LOT_SIZE}`\n"
-        f"• *Prezzo:* `{current_price}`\n\n"
-        f"🎯 *Take Profit:* `{tp_price}`\n"
-        f"🛑 *Stop Loss:* `{sl_price}`"
+        f"{emoji} SEGNALE XAU/USD (DAILY UNICO) {emoji}\n\n"
+        f"• Ordine: {signal_direction}\n"
+        f"• Lotti: {LOT_SIZE}\n"
+        f"• Prezzo: {current_price}\n\n"
+        f"🎯 Take Profit: {tp_price}\n"
+        f"🛑 Stop Loss: {sl_price}"
     )
-    send_telegram_message(message)
+
+    send_notifications(message)
 
 
 if __name__ == "__main__":
