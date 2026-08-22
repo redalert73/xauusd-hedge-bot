@@ -5,10 +5,8 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 
-# Parametri e Costanti
 STATE_FILE = "state/xauusd_state.json"
 LOT_SIZE = 1.04
-MIN_ATR_THRESHOLD = 0.25  # Abbassato ulteriormente per accettare anche fasi a volatilità moderata
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -16,14 +14,12 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 
 def is_within_trading_hours():
-    """Verifica operatività (06:00 - 20:00 ora italiana)."""
     rome_tz = ZoneInfo("Europe/Rome")
     now_rome = datetime.now(rome_tz)
     return 6 <= now_rome.hour < 20
 
 
 def fetch_ohlcv_data():
-    """Recupera le ultime 100 candele a 5 minuti da Twelve Data."""
     if not TWELVE_DATA_API_KEY:
         print("ERRORE: Manca la chiave API nei Secrets.")
         return None
@@ -45,42 +41,25 @@ def fetch_ohlcv_data():
                 pd.to_numeric(df["volume"]) if "volume" in df.columns else 1.0
             )
             return df
-        else:
-            print(f"Errore API: {data}")
-            return None
     except Exception as e:
         print(f"Errore connessione: {e}")
-        return None
+    return None
 
 
 def calculate_indicators(df):
-    """Calcola ATR, POC e Media Mobile (EMA 50)."""
     high_low = df["high"] - df["low"]
     high_close = (df["high"] - df["close"].shift()).abs()
     low_close = (df["low"] - df["close"].shift()).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     df["atr"] = tr.rolling(window=14).mean()
-
-    df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
-    df["vol_sma_20"] = df["volume"].rolling(window=20).mean()
-
-    volume_profile = {}
-    for index, row in df.iterrows():
-        typical_price = round(
-            (row["high"] + row["low"] + row["close"]) / 3, 1
-        )
-        volume_profile[typical_price] = (
-            volume_profile.get(typical_price, 0) + row["volume"]
-        )
-    poc_price = max(volume_profile, key=volume_profile.get)
-
-    return df, poc_price
+    return df
 
 
 def get_structural_liquidity(df, window=3):
-    """Finestra ridotta (window=3) per individuare swing di liquidità più frequenti."""
-    swing_lows, swing_highs = [], []
+    """Finestra stretta per massimizzare i falsi breakout."""
     storico = df.iloc[:-1]
+    swing_lows = []
+    swing_highs = []
 
     for i in range(window, len(storico) - window):
         current_low = storico["low"].iloc[i]
@@ -144,7 +123,7 @@ def send_telegram_message(message):
 
 def main():
     if not is_within_trading_hours():
-        print("Fuori fascia oraria 06:00 - 20:00.")
+        print("Fuori fascia oraria.")
         return
 
     df = fetch_ohlcv_data()
@@ -152,39 +131,31 @@ def main():
         print("Dati insufficienti.")
         return
 
-    df, poc_price = calculate_indicators(df)
-    liq_low, liq_high = get_structural_liquidity(df)
+    df = calculate_indicators(df)
+    liq_low, liq_high = get_structural_liquidity(df, window=3)
 
     current_price = df["close"].iloc[-1]
     current_low = df["low"].iloc[-1]
     current_high = df["high"].iloc[-1]
     current_atr = df["atr"].iloc[-1]
-    current_ema50 = df["ema_50"].iloc[-1]
 
-    is_volatile = current_atr >= MIN_ATR_THRESHOLD
-
-    print(f"Prezzo: {current_price} | POC: {poc_price} | ATR: {round(current_atr, 2)}")
-    print(f"Liq Low: {liq_low} | Liq High: {liq_high}")
+    if pd.isna(current_atr) or current_atr < 0.25:
+        return
 
     signal_direction = None
-
-    # SL e TP dinamici basati sull'ATR
     sl_distance = max(round(current_atr * 2.0, 2), 18.0)
     tp_distance = max(round(current_atr * 2.5, 2), 22.0)
 
-    # Condizioni sbloccate per aumentare la frequenza dei segnali:
-    # Rimosso il blocco rigido delle wick enormi e allentati i vincoli, focalizzandoci su sweep + volatilità e POC.
-    if current_low < liq_low and is_volatile:
+    # Condizioni di breakout reattivo (quelle testate che colpiscono lo SL)
+    if current_low < liq_low:
         signal_direction = "BUY"
         sl_price = round(current_price - sl_distance, 2)
         tp_price = round(current_price + tp_distance, 2)
-
-    elif current_high > liq_high and is_volatile:
+    elif current_high > liq_high:
         signal_direction = "SELL"
         sl_price = round(current_price + sl_distance, 2)
         tp_price = round(current_price - tp_distance, 2)
     else:
-        print("Condizioni di attivazione non soddisfatte. Standby.")
         return
 
     state = load_state()
@@ -200,16 +171,12 @@ def main():
 
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE FREQUENZA ALTA* {emoji}\n\n"
-        f"• *Ordine:* `{signal_direction}`\n"
+        f"{emoji} *SEGNALE XAU/USD (BREAKOUT TARGET)* {emoji}\n\n"
+        f"• *Direzione:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
-        f"• *Prezzo Attuale:* `{current_price}`\n\n"
-        f"📊 *Dettagli Operativi:*\n"
-        f"• *Sweep Level:* `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
-        f"• *ATR Volatilità:* `{round(current_atr, 2)}`\n\n"
+        f"• *Prezzo:* `{current_price}`\n\n"
         f"🎯 *Take Profit:* `{tp_price}`\n"
-        f"🛑 *Stop Loss:* `{sl_price}`\n\n"
-        f"⚡ *Nota:* Filtri alleggeriti per catturare più opportunità di movimento."
+        f"🛑 *Stop Loss:* `{sl_price}`"
     )
     send_telegram_message(message)
 
