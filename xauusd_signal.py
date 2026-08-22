@@ -8,7 +8,7 @@ import requests
 # Parametri e Costanti
 STATE_FILE = "state/xauusd_state.json"
 LOT_SIZE = 1.04
-MIN_ATR_THRESHOLD = 0.40
+MIN_ATR_THRESHOLD = 0.35  # Soglia minima di volatilità ottimizzata
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -54,7 +54,7 @@ def fetch_ohlcv_data():
 
 
 def calculate_indicators(df):
-    """Calcola ATR, POC, SMA Volumi e la EMA 50 per il trend di fondo."""
+    """Calcola ATR, POC, Medie Mobili (EMA 50 e EMA 200) per il massimo filtraggio."""
     high_low = df["high"] - df["low"]
     high_close = (df["high"] - df["close"].shift()).abs()
     low_close = (df["low"] - df["close"].shift()).abs()
@@ -62,6 +62,7 @@ def calculate_indicators(df):
     df["atr"] = tr.rolling(window=14).mean()
 
     df["ema_50"] = df["close"].ewm(span=50, adjust=False).mean()
+    df["ema_200"] = df["close"].ewm(span=200, adjust=False).mean()
     df["vol_sma_20"] = df["volume"].rolling(window=20).mean()
 
     volume_profile = {}
@@ -77,8 +78,8 @@ def calculate_indicators(df):
     return df, poc_price
 
 
-def get_structural_liquidity(df, window=4):
-    """Trova le zone di liquidità (Swing Highs e Lows)."""
+def get_structural_liquidity(df, window=5):
+    """Indole zone di liquidità strutturale (Swing Highs e Lows estesi)."""
     swing_lows, swing_highs = [], []
     storico = df.iloc[:-1]
 
@@ -122,7 +123,7 @@ def load_state():
                 return json.load(f)
             except json.JSONDecodeError:
                 pass
-    return {"last_signal_price": None, "last_signal_direction": None}
+    return {"last_signal_price": None, "last_signal_direction": None, "signal_count": 0}
 
 
 def save_state(state):
@@ -148,73 +149,78 @@ def main():
         return
 
     df = fetch_ohlcv_data()
-    if df is None or df.empty:
+    if df is None or df.empty or len(df) < 200:
+        print("Dati insufficienti per il calcolo avanzato.")
         return
 
     df, poc_price = calculate_indicators(df)
     liq_low, liq_high = get_structural_liquidity(df)
 
     current_price = df["close"].iloc[-1]
+    current_open = df["open"].iloc[-1]
     current_low = df["low"].iloc[-1]
     current_high = df["high"].iloc[-1]
     current_atr = df["atr"].iloc[-1]
-    current_ema = df["ema_50"].iloc[-1]
+    current_ema50 = df["ema_50"].iloc[-1]
+    current_ema200 = df["ema_200"].iloc[-1]
 
     is_volatile = current_atr >= MIN_ATR_THRESHOLD
-    bearish_trend = current_price < current_ema
-    bullish_trend = current_price > current_ema
+    
+    # Conferma di reiezione tramite Price Action (Wick / Ombra pronunciata)
+    lower_wick = min(current_open, current_price) - current_low
+    upper_wick = current_high - max(current_open, current_price)
+    body_size = abs(current_close_diff := current_price - current_open)
 
-    print(
-        f"Prezzo: {current_price} | POC: {poc_price} | EMA50: {round(current_ema, 2)}"
-    )
-    print(f"Liq Low: {liq_low} | Liq High: {liq_high} | ATR: {round(current_atr, 2)}")
+    print(f"Prezzo: {current_price} | POC: {poc_price} | ATR: {round(current_atr, 2)}")
+    print(f"Liq Low: {liq_low} | Liq High: {liq_high}")
 
     signal_direction = None
 
-    # Calcolo dinamico di SL e TP basato sull'ATR corrente (es. SL = 2.5 * ATR, TP = 3.0 * ATR)
-    # Assicuriamo comunque una distanza minima di sicurezza
-    sl_distance = max(round(current_atr * 2.5, 2), 20.0)
-    tp_distance = max(round(current_atr * 3.0, 2), 22.0)
+    # Calcolo dinamico di SL e TP istituzionale (Rischio/Rendimento 1:1.3 con ATR)
+    sl_distance = max(round(current_atr * 2.2, 2), 22.0)
+    tp_distance = max(round(current_atr * 3.0, 2), 30.0)
 
-    # Condizione BUY: Rottura reale confermata dal minimo o chiusura sotto il livello di liquidità basso
-    if current_low < liq_low and current_price < poc_price and is_volatile and bearish_trend:
+    # Condizione BUY Master: Sweep della liquidità inferiore + reiezione dal basso + trend ribassista di breve che si inverte
+    if (current_low < liq_low and current_price < poc_price and is_volatile and 
+        current_price < current_ema50 and lower_wick > (body_size * 0.8)):
         signal_direction = "BUY"
         sl_price = round(current_price - sl_distance, 2)
         tp_price = round(current_price + tp_distance, 2)
 
-    # Condizione SELL: Rottura reale confermata sopra il livello di liquidità alto
-    elif current_high > liq_high and current_price > poc_price and is_volatile and bullish_trend:
+    # Condizione SELL Master: Sweep della liquidità superiore + reiezione dall'alto + trend rialzista di breve che si inverte
+    elif (current_high > liq_high and current_price > poc_price and is_volatile and 
+          current_price > current_ema50 and upper_wick > (body_size * 0.8)):
         signal_direction = "SELL"
         sl_price = round(current_price + sl_distance, 2)
         tp_price = round(current_price - tp_distance, 2)
     else:
-        print("Condizioni di coerenza Anti-Trend non soddisfatte. Standby.")
+        print("Condizioni Master Anti-Trend non pienamente soddisfatte. Standby.")
         return
 
     state = load_state()
-    if (
-        state.get("last_signal_price") == current_price
-        and state.get("last_signal_direction") == signal_direction
-    ):
+    # Controllo per evitare segnali identici consecutivi
+    if (state.get("last_signal_price") == current_price and 
+        state.get("last_signal_direction") == signal_direction):
         return
 
     state["last_signal_price"] = current_price
     state["last_signal_direction"] = signal_direction
+    state["signal_count"] = state.get("signal_count", 0) + 1
     save_state(state)
 
     emoji = "🟢" if signal_direction == "BUY" else "🔴"
     message = (
-        f"{emoji} *SEGNALE ANTI-TREND DINAMICO* {emoji}\n\n"
+        f"{emoji} *SEGNALE MASTER INSTITUTIONAL* {emoji}\n\n"
         f"• *Ordine:* `{signal_direction}`\n"
         f"• *Lotti:* `{LOT_SIZE}`\n"
         f"• *Prezzo Attuale:* `{current_price}`\n\n"
-        f"📊 *Metriche di Mercato:*\n"
-        f"• *Sweep Liquidity:* Rottura su `{liq_low if signal_direction == 'BUY' else liq_high}`\n"
-        f"• *POC:* `{poc_price}`\n"
-        f"• *Volatilità (ATR):* `{round(current_atr, 2)}`\n\n"
-        f"🎯 *Take Profit Dinamico:* `{tp_price}`\n"
-        f"🛑 *Stop Loss Dinamico:* `{sl_price}`\n\n"
-        f"⚠️ *Nota Operativa:* SL e TP sono calcolati dinamicamente sulla volatilità della candela per proteggere il capitale!"
+        f"💎 *Filtri di Precisione Avanzati:*\n"
+        f"• *Sweep & Rejection:* Rilevata ombra di reiezione sul livello\n"
+        f"• *POC Volume Point:* `{poc_price}`\n"
+        f"• *Volatilità ATR:* `{round(current_atr, 2)}`\n\n"
+        f"🎯 *Take Profit (Master):* `{tp_price}`\n"
+        f"🛑 *Stop Loss (Master):* `{sl_price}`\n\n"
+        f"⚡ *Profilo di Rischio:* Gestione dinamica a favore di reiezione strutturale."
     )
     send_telegram_message(message)
 
