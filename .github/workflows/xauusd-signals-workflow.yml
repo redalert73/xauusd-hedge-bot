@@ -1,43 +1,38 @@
-name: XAUUSD Anti-Trend Signal Bot
+name: XAUUSD Trading Bot
 
 on:
-  workflow_dispatch:
+  # 1. Esecuzione automatica a intervalli regolari (es. ogni 15 minuti)
   schedule:
-    - cron: '*/5 * * * *'
-
-permissions:
-  contents: write
+    - cron: '*/15 * * * *'  # Gira ogni 15 minuti di ogni giorno
+    
+  # 2. Permette anche di avviarlo manualmente con un click da GitHub
+  workflow_dispatch:
 
 jobs:
   run-bot:
+  # Scegli il runner Linux standard (gratuito)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout del codice
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Configurazione di Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Installazione delle dipendenze
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas
+          pip install requests
 
-      - name: Run Signal Script
+      - name: Esecuzione dello script Python
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
           python xauusd_signal.py
-
-      - name: Commit updated JSON state
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add state/xauusd_state.json
-          git commit -m "Auto-update XAUUSD signal state [skip ci]" || echo "Nessuna modifica da salvare"
-          git push
+          
