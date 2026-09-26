@@ -48,13 +48,11 @@ def calcola_atr(candles, periodo=14):
 def calcola_ema(closes, periodo):
     """Calcola la Media Mobile Esponenziale (EMA) per un dato periodo."""
     if len(closes) < periodo:
-        return closes[0]  # Fallback se non ci abbastanza candele
+        return closes[0]
     
     multiplier = 2 / (periodo + 1)
-    # Partiamo dalla SMA iniziale come base per l'EMA
     ema = sum(closes[:periodo]) / periodo
     
-    # Calcoliamo l'EMA scorrendo le candele dal passato al presente
     for close in reversed(closes[periodo:]):
         ema = (close - ema) * multiplier + ema
         
@@ -65,7 +63,7 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, ema20, ema30,
     emoji_dir = "🟢" if direzione == "BUY" else "🔴"
     
     message = (
-        f"{emoji_dir} SEGNALE XAU/USD: {direzione} {emoji_dir}\n\n"
+        f"{emoji_dir} SEGNALE XAU/USD (INVERSO): {direzione} {emoji_dir}\n\n"
         f"• Lotti: {LOTS}\n"
         f"• Prezzo Ingresso: {prezzo:.2f}\n"
         f"• ATR Dinamico: {atr_val:.2f}\n"
@@ -105,7 +103,7 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, ema20, ema30,
                 url_ntfy,
                 data=message.encode("utf-8"),
                 headers={
-                    "Title": f"Segnale XAU/USD - {direzione}",
+                    "Title": f"Segnale XAU/USD Inverso - {direzione}",
                     "Tags": "chart_with_upwards_trend,bell" if direzione == "BUY" else "chart_with_downwards_trend,bell",
                     "Priority": "urgent",
                 },
@@ -125,13 +123,12 @@ def is_orario_operativo():
     return ora_corrente >= (5 * 60 + 45)
 
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check avanzato con EMA bot XAU/USD...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD (Logica Inversa)...")
 
     if not is_orario_operativo():
         print("⏳ Fuori orario operativo (prima delle 05:45). Il bot termina senza azioni.")
         return
 
-    # Richiediamo almeno 120 candele per calcolare comodamente anche la EMA 100
     url = "https://api.twelvedata.com/time_series"
     params = {
         "symbol": "XAU/USD",
@@ -142,28 +139,24 @@ def main():
     
     data = fetch_market_data_with_retry(url, params)
     if not data or "values" not in data:
-        print("⚠️ Impossibile recuperare i dati da Twelve Data.")
+        print("⚠️ Impossibile recuperare i dati da Teve Data.")
         return
 
     candles = data["values"]
     prezzo_attuale = float(candles[0]["close"])
-    
-    # Estraiamo la lista dei prezzi di chiusura (dal più vecchio al più recente per il calcolo EMA)
     closes = [float(c["close"]) for c in reversed(candles)]
 
-    # Calcoli tecnici
     atr_val = calcola_atr(candles, periodo=14)
     ema_20 = calcola_ema(closes, 20)
     ema_30 = calcola_ema(closes, 30)
     ema_100 = calcola_ema(closes, 100)
     
-    # Livelli di swing recenti
     highs = [float(c["high"]) for c in candles[1:17]]
     lows = [float(c["low"]) for c in candles[1:17]]
     swing_high = max(highs)
     swing_low = min(lows)
 
-    print(f"📊 Prezzo: {prezzo_attuale:.2f} | EMA20: {ema_20:.2f} | EMA30: {ema_30:.2f} | EMA100: {ema_100:.2f}")
+    print(f"📊 Prezzo: {prezzo_attuale:.2f} | Swing High: {swing_high:.2f} | Swing Low: {swing_low:.2f}")
 
     segnale_trovato = False
     direzione = ""
@@ -171,28 +164,27 @@ def main():
     sl_val = 0.0
     swing_lvl_segnale = 0.0
 
-    # Condizione BUY: Rottura swing high + Trend rialzista confermato dalle EMA (EMA 20 > EMA 30 > EMA 100)
+    # LOGICA INVERSA:
+    # 1. Se il prezzo supera il massimo, ci aspettiamo un’inversione/ritracciamento -> VENDITA (SELL)
     if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
-        if ema_20 > ema_30 and ema_30 > ema_100:
-            segnale_trovato = True
-            direzione = "BUY"
-            swing_lvl_segnale = swing_high
-            sl_val = prezzo_attuale - (atr_val * 1.5)
-            tp_val = prezzo_attuale + (atr_val * 3.0)
+        segnale_trovato = True
+        direzione = "SELL"
+        swing_lvl_segnale = swing_high
+        sl_val = prezzo_attuale + (atr_val * 1.5)  # Stop Loss sopra
+        tp_val = prezzo_attuale - (atr_val * 3.0)  # Take Profit sotto
 
-    # Condizione SELL: Rottura swing low + Trend ribassista confermato dalle EMA (EMA 20 < EMA 30 < EMA 100)
+    # 2. Se il prezzo scende sotto il minimo, ci aspettiamo un rimbalzo -> ACQUISTO (BUY)
     elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
-        if ema_20 < ema_30 and ema_30 < ema_100:
-            segnale_trovato = True
-            direzione = "SELL"
-            swing_lvl_segnale = swing_low
-            sl_val = prezzo_attuale + (atr_val * 1.5)
-            tp_val = prezzo_attuale - (atr_val * 3.0)
+        segnale_trovato = True
+        direzione = "BUY"
+        swing_lvl_segnale = swing_low
+        sl_val = prezzo_attuale - (atr_val * 1.5)  # Stop Loss sotto
+        tp_val = prezzo_attuale + (atr_val * 3.0)  # Take Profit sopra
 
     if segnale_trovato:
         invia_notifiche(direzione, prezzo_attuale, tp_val, sl_val, atr_val, swing_lvl_segnale, ema_20, ema_30, ema_100)
     else:
-        print("🔍 Nessun segnale valido (filtri EMA o condizioni di breakout non soddisfatti).")
+        print("🔍 Nessun segnale inverso valido rilevato in questo intervallo.")
 
 if __name__ == "__main__":
     main()
