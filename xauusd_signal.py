@@ -10,10 +10,9 @@ NTFY_TOPIC = os.getenv("NTFY_TOPIC", "xauusd_signal_77ax")
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 LOTS = 1.04  # Parametro rigido blindato
-INTERVAL_SECONDS = 900  # Controlla ogni 15 minuti (900 secondi)
 
-def fetch_market_data_with_retry(url, params, max_retries=3, delay=5):
-    """Esegue chiamate API con sistema di retry automatico ed exponential backoff."""
+def fetch_market_data_with_retry(url, params, max_retries=3, delay=3):
+    """Esegue chiamate API con sistema di retry automatico per evitare timeout."""
     for attempt in range(1, max_retries + 1):
         try:
             response = requests.get(url, params=params, timeout=10)
@@ -21,13 +20,13 @@ def fetch_market_data_with_retry(url, params, max_retries=3, delay=5):
                 data = response.json()
                 if "values" in data:
                     return data
-            print(f"⚠️ Tentativo {attempt}/{max_retries} fallito o dati non validi. Riprovo tra {delay}s...")
+            print(f"⚠️ Tentativo {attempt}/{max_retries} fallito. Riprovo tra {delay}s...")
         except Exception as e:
             print(f"⚠️ Errore di connessione (Tentativo {attempt}): {e}")
         
         if attempt < max_retries:
             time.sleep(delay)
-            delay *= 2  # Attesa esponenziale
+            delay *= 2
     return None
 
 def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl):
@@ -85,21 +84,23 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl):
             print(f"❌ ntfy Eccezione: {e}")
 
 def is_orario_operativo():
-    """Verifica se siamo nella finestra oraria (dalle 05:45 in poi)."""
+    """Verifica che l'orario sia successivo alle 05:45 (apertura sessione asiatica/pre-Londra)."""
     now = datetime.now()
     ora_corrente = now.hour * 60 + now.minute
     inizio_operatività = 5 * 60 + 45  # 05:45
     return ora_corrente >= inizio_operatività
 
-def esegui_analisi():
-    """Logica principale di controllo e generazione segnale."""
+def main():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD...")
+
+    # 1. Controllo finestra oraria (dalle 05:45 in poi)
     if not is_orario_operativo():
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏳ In attesa dell'orario operativo (dalle 05:45)...")
+        print("⏳ Fuori orario operativo (prima delle 05:45). Il bot termina senza azioni.")
         return
 
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🚀 Finestra attiva: scarico dati e verifico ATR/Liquidità...")
-    
-    # Esempio di chiamata API protetta con retry
+    print("🚀 Finestra attiva: analisi della liquidità asiatica e pre-Londra in corso...")
+
+    # 2. Richiesta dati di mercato con retry
     url = "https://api.twelvedata.com/time_series"
     params = {
         "symbol": "XAU/USD",
@@ -110,38 +111,23 @@ def esegui_analisi():
     
     data = fetch_market_data_with_retry(url, params)
     if not data:
-        print("⚠️ Impossibile recuperare i dati di mercato in questo ciclo.")
+        print("⚠️ Impossibile recuperare i dati da Twelve Data.")
         return
 
-    # --- INSERISCI QUI LA TUA LOGICA DI CALCOLO ATR / SWING / DIREZIONE ---
-    # Esempio dimostrativo di struttura dati calcolata:
-    # (Sostituisci queste variabili con le tue formule reali di calcolo)
-    segnale_trovato = False  # Metti a True quando scatta la condizione
-    direzione = "BUY"        # o "SELL"
+    # --- LOGICA DI CALCOLO (Inserisci qui i tuoi trigger ATR / Swing) ---
+    segnale_trovato = False  # Diventa True se il prezzo rompe i livelli chiave
+    direzione = "BUY"
     prezzo_attuale = 2350.00
     tp_val = 2375.00
     sl_val = 2314.00
     atr_val = 18.50
     swing_lvl = 2342.10
 
+    # 3. Invio notifica se il segnale è confermato
     if segnale_trovato:
         invia_notifiche(direzione, prezzo_attuale, tp_val, sl_val, atr_val, swing_lvl)
     else:
-        print("🔍 Analisi completata: Nessun trigger di breakout rilevato in questo intervallo.")
-
-def main_loop():
-    """Avvia il bot in modalità continua con controlli multipli."""
-    print("🤖 Bot XAU/USD avviato in modalità continua.")
-    print(f"⏰ Orario di attivazione: dalle 05:45 | Intervallo controlli: {INTERVAL_SECONDS // 60} minuti.")
-    
-    while True:
-        try:
-            esegui_analisi()
-        except Exception as e:
-            print(f"❌ Errore imprevisto nel ciclo principale: {e}")
-        
-        # Attende il tempo stabilito prima del prossimo controllo
-        time.sleep(INTERVAL_SECONDS)
+        print("🔍 Nessun breakout o sweep di liquidità rilevato in questo intervallo.")
 
 if __name__ == "__main__":
-    main_loop()
+    main()
