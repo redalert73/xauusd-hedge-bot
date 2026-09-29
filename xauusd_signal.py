@@ -58,16 +58,19 @@ def calcola_ema(closes, periodo):
         
     return ema
 
-def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, ema20, ema30, ema100):
-    """Invia il segnale formattato su Telegram e ntfy con i dettagli tecnici e delle EMA."""
+def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, vol_attuale, vol_medio, ema20, ema30, ema100):
+    """Invia il segnale formattato su Telegram e ntfy con i dettagli tecnici, EMA e volumi."""
     emoji_dir = "🟢" if direzione == "BUY" else "🔴"
     
     message = (
-        f"{emoji_dir} SEGNALE XAU/USD (INVERSO): {direzione} {emoji_dir}\n\n"
+        f"{emoji_dir} SEGNALE XAU/USD (VOL + INVERSO): {direzione} {emoji_dir}\n\n"
         f"• Lotti: {LOTS}\n"
         f"• Prezzo Ingresso: {prezzo:.2f}\n"
         f"• ATR Dinamico: {atr_val:.2f}\n"
         f"• Livello Swing: {swing_lvl:.2f}\n\n"
+        f"📊 Analisi Volumi:\n"
+        f"  - Volume Candela: {vol_attuale:.1f}\n"
+        f"  - Media Volumi (20): {vol_medio:.1f}\n\n"
         f"📈 Filtri EMA:\n"
         f"  - EMA 20: {ema20:.2f}\n"
         f"  - EMA 30: {ema30:.2f}\n"
@@ -103,7 +106,7 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, ema20, ema30,
                 url_ntfy,
                 data=message.encode("utf-8"),
                 headers={
-                    "Title": f"Segnale XAU/USD Inverso - {direzione}",
+                    "Title": f"Segnale XAU/USD Volumetrico - {direzione}",
                     "Tags": "chart_with_upwards_trend,bell" if direzione == "BUY" else "chart_with_downwards_trend,bell",
                     "Priority": "urgent",
                 },
@@ -123,7 +126,7 @@ def is_orario_operativo():
     return ora_corrente >= (5 * 60 + 45)
 
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD (Logica Inversa)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD (Volumi + Logica Inversa)...")
 
     if not is_orario_operativo():
         print("⏳ Fuori orario operativo (prima delle 05:45). Il bot termina senza azioni.")
@@ -139,12 +142,17 @@ def main():
     
     data = fetch_market_data_with_retry(url, params)
     if not data or "values" not in data:
-        print("⚠️ Impossibile recuperare i dati da Teve Data.")
+        print("⚠️ Impossibile recuperare i dati da Twelve Data.")
         return
 
     candles = data["values"]
     prezzo_attuale = float(candles[0]["close"])
     closes = [float(c["close"]) for c in reversed(candles)]
+
+    # Estrazione volumi
+    volumi = [float(c.get("volume", 0)) for c in candles]
+    vol_attuale = volumi[0]
+    vol_medio = sum(volumi[1:21]) / 20 if len(volumi) >= 21 else vol_attuale
 
     atr_val = calcola_atr(candles, periodo=14)
     ema_20 = calcola_ema(closes, 20)
@@ -156,7 +164,7 @@ def main():
     swing_high = max(highs)
     swing_low = min(lows)
 
-    print(f"📊 Prezzo: {prezzo_attuale:.2f} | Swing High: {swing_high:.2f} | Swing Low: {swing_low:.2f}")
+    print(f"📊 Prezzo: {prezzo_attuale:.2f} | Vol Corrente: {vol_attuale:.1f} | Vol Medio: {vol_medio:.1f}")
 
     segnale_trovato = False
     direzione = ""
@@ -164,27 +172,32 @@ def main():
     sl_val = 0.0
     swing_lvl_segnale = 0.0
 
-    # LOGICA INVERSA:
-    # 1. Se il prezzo supera il massimo, ci aspettiamo un’inversione/ritracciamento -> VENDITA (SELL)
-    if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
-        segnale_trovato = True
-        direzione = "SELL"
-        swing_lvl_segnale = swing_high
-        sl_val = prezzo_attuale + (atr_val * 1.5)  # Stop Loss sopra
-        tp_val = prezzo_attuale - (atr_val * 3.0)  # Take Profit sotto
+    # Condizione Volume: Il volume della candela corrente deve essere significativo (almeno 1.2x la media)
+    volume_confermato = vol_attuale >= (vol_medio * 1.2)
 
-    # 2. Se il prezzo scende sotto il minimo, ci aspettiamo un rimbalzo -> ACQUISTO (BUY)
+    # LOGICA INVERSA + FILTRO VOLUMETRICO:
+    # 1. Rottura del massimo + volumi alti -> Spinta esaurita o sweep -> VENDITA (SELL)
+    if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
+        if volume_confermato:
+            segnale_trovato = True
+            direzione = "SELL"
+            swing_lvl_segnale = swing_high
+            sl_val = prezzo_attuale + (atr_val * 1.5)
+            tp_val = prezzo_attuale - (atr_val * 3.0)
+
+    # 2. Rottura del minimo + volumi alti -> Caccia alla liquidità / esaurimento -> ACQUISTO (BUY)
     elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
-        segnale_trovato = True
-        direzione = "BUY"
-        swing_lvl_segnale = swing_low
-        sl_val = prezzo_attuale - (atr_val * 1.5)  # Stop Loss sotto
-        tp_val = prezzo_attuale + (atr_val * 3.0)  # Take Profit sopra
+        if volume_confermato:
+            segnale_trovato = True
+            direzione = "BUY"
+            swing_lvl_segnale = swing_low
+            sl_val = prezzo_attuale - (atr_val * 1.5)
+            tp_val = prezzo_attuale + (atr_val * 3.0)
 
     if segnale_trovato:
-        invia_notifiche(direzione, prezzo_attuale, tp_val, sl_val, atr_val, swing_lvl_segnale, ema_20, ema_30, ema_100)
+        invia_notifiche(direzione, prezzo_attuale, tp_val, sl_val, atr_val, swing_lvl_segnale, vol_attuale, vol_medio, ema_20, ema_30, ema_100)
     else:
-        print("🔍 Nessun segnale inverso valido rilevato in questo intervallo.")
+        print("🔍 Nessun segnale valido (volumi non sufficienti o condizioni di breakout inverso non soddisfatte).")
 
 if __name__ == "__main__":
     main()
