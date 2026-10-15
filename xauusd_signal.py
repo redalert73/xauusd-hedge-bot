@@ -63,7 +63,7 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, vol_attuale, 
     emoji_dir = "🟢" if direzione == "BUY" else "🔴"
     
     message = (
-        f"{emoji_dir} SEGNALE XAU/USD (VOL + INVERSO): {direzione} {emoji_dir}\n\n"
+        f"{emoji_dir} SEGNALE XAU/USD (FINO ALLE 20:00): {direzione} {emoji_dir}\n\n"
         f"• Lotti: {LOTS}\n"
         f"• Prezzo Ingresso: {prezzo:.2f}\n"
         f"• ATR Dinamico: {atr_val:.2f}\n"
@@ -106,7 +106,7 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, vol_attuale, 
                 url_ntfy,
                 data=message.encode("utf-8"),
                 headers={
-                    "Title": f"Segnale XAU/USD Volumetrico - {direzione}",
+                    "Title": f"Segnale XAU/USD - {direzione}",
                     "Tags": "chart_with_upwards_trend,bell" if direzione == "BUY" else "chart_with_downwards_trend,bell",
                     "Priority": "urgent",
                 },
@@ -120,16 +120,18 @@ def invia_notifiche(direzione, prezzo, tp, sl, atr_val, swing_lvl, vol_attuale, 
             print(f"❌ ntfy Eccezione: {e}")
 
 def is_orario_operativo():
-    """Verifica che l'orario sia successivo alle 05:45."""
+    """Verifica che l'orario sia compreso tra le 05:45 e le 20:00."""
     now = datetime.now()
     ora_corrente = now.hour * 60 + now.minute
-    return ora_corrente >= (5 * 60 + 45)
+    inizio = 5 * 60 + 45   # 05:45
+    fine = 20 * 60         # 20:00
+    return inizio <= ora_corrente <= fine
 
 def main():
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD (Volumi + Logica Inversa)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🤖 Avvio check bot XAU/USD (Finestra 05:45 - 20:00)...")
 
     if not is_orario_operativo():
-        print("⏳ Fuori orario operativo (prima delle 05:45). Il bot termina senza azioni.")
+        print("⏳ Fuori dalla finestra oraria consentita (05:45 - 20:00). Il bot termina senza azioni.")
         return
 
     url = "https://api.twelvedata.com/time_series"
@@ -149,7 +151,6 @@ def main():
     prezzo_attuale = float(candles[0]["close"])
     closes = [float(c["close"]) for c in reversed(candles)]
 
-    # Estrazione volumi
     volumi = [float(c.get("volume", 0)) for c in candles]
     vol_attuale = volumi[0]
     vol_medio = sum(volumi[1:21]) / 20 if len(volumi) >= 21 else vol_attuale
@@ -172,11 +173,9 @@ def main():
     sl_val = 0.0
     swing_lvl_segnale = 0.0
 
-    # Condizione Volume: Il volume della candela corrente deve essere significativo (almeno 1.2x la media)
     volume_confermato = vol_attuale >= (vol_medio * 1.2)
 
-    # LOGICA INVERSA + FILTRO VOLUMETRICO:
-    # 1. Rottura del massimo + volumi alti -> Spinta esaurita o sweep -> VENDITA (SELL)
+    # Logica Inversa + Filtri Volumetrici
     if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
         if volume_confermato:
             segnale_trovato = True
@@ -185,7 +184,6 @@ def main():
             sl_val = prezzo_attuale + (atr_val * 1.5)
             tp_val = prezzo_attuale - (atr_val * 3.0)
 
-    # 2. Rottura del minimo + volumi alti -> Caccia alla liquidità / esaurimento -> ACQUISTO (BUY)
     elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
         if volume_confermato:
             segnale_trovato = True
@@ -197,7 +195,7 @@ def main():
     if segnale_trovato:
         invia_notifiche(direzione, prezzo_attuale, tp_val, sl_val, atr_val, swing_lvl_segnale, vol_attuale, vol_medio, ema_20, ema_30, ema_100)
     else:
-        print("🔍 Nessun segnale valido (volumi non sufficienti o condizioni di breakout inverso non soddisfatte).")
+        print("🔍 Nessun segnale valido rilevato in questa esecuzione.")
 
 if __name__ == "__main__":
     main()
