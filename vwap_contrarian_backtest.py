@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_rolling_vwap_e_bande(candles, index, periodo=40, num_std=4.2): # Ottimizzato a 40 periodi e 4.2 SD
+def calcola_rolling_vwap_e_bande(candles, index, periodo=35, num_std=3.8):
     if index < periodo:
         cl = float(candles[index]['close'])
         return cl, cl, cl
@@ -62,7 +62,7 @@ def calcola_atr(candles, index, periodo=14):
     return tr_sum / periodo
 
 def main():
-    print("🔄 Avvio Backtest VWAP Bilanciato (Periodo 40 + SD 4.2 + ATR 2.4)...")
+    print("🔄 Avvio Backtest VWAP Contrarian (Logica Win = SL)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -71,32 +71,32 @@ def main():
     wins, losses, totale_operazioni = 0, 0, 0
     cooldown_index = 0
 
-    for i in range(60, len(candles) - config.MAX_FUTURE_CANDLES):
+    for i in range(50, len(candles) - config.MAX_FUTURE_CANDLES):
         if i < cooldown_index:
             continue
 
         current_candle = candles[i]
-        prezzo_chiusura = float(current_candle["close"])
-        prezzo_alto = float(current_candle["high"])
-        prezzo_basso = float(current_candle["low"])
-        range_candela = prezzo_alto - prezzo_basso
+        p_close = float(current_candle["close"])
+        p_high = float(current_candle["high"])
+        p_low = float(current_candle["low"])
+        range_candela = p_high - p_low
 
-        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=40, num_std=4.2)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=35, num_std=3.8)
         atr = calcola_atr(candles, i, periodo=14)
 
-        movimento_forte = range_candela >= (atr * 2.4) if atr > 0 else True
+        movimento_forte = range_candela >= (atr * 2.0) if atr > 0 else True
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        if prezzo_chiusura >= upper_band and movimento_forte:
+        if p_close >= upper_band and movimento_forte:
             segnale = "SELL"
-            sl = prezzo_chiusura + config.SL_VAL
-            tp = prezzo_chiusura - config.TP_VAL
-        elif prezzo_chiusura <= lower_band and movimento_forte:
+            sl = p_close + config.SL_VAL
+            tp = p_close - config.TP_VAL
+        elif p_close <= lower_band and movimento_forte:
             segnale = "BUY"
-            sl = prezzo_chiusura - config.SL_VAL
-            tp = prezzo_chiusura + config.TP_VAL
+            sl = p_close - config.SL_VAL
+            tp = p_close + config.TP_VAL
 
         if segnale:
             totale_operazioni += 1
@@ -108,6 +108,7 @@ def main():
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
+                # LA TUA LOGICA: Win = Raggiunto SL, Loss = Raggiunto TP
                 if segnale == "SELL":
                     if f_high >= sl:
                         esito = "WIN"
@@ -129,7 +130,7 @@ def main():
             cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Bilanciato Sweet-Spot):")
+    print(f"📈 REPORT FINALE (VWAP Contrarian):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
