@@ -48,22 +48,22 @@ def is_orario_consentito(datetime_str):
     return inizio <= ora_minuti <= fine
 
 def main():
-    print("🔄 Avvio Backtest XAU/USD (Con Hard Stop Anti-Slippage a 2.800)...")
+    # PARAMETRI SCELTI: SL 2.300 / TP 2.000
+    SL_VAL = 2.300
+    TP_VAL = 2.000
+
+    print(f"🔄 Avvio Backtest (SL {SL_VAL:.3f} / TP {TP_VAL:.3f})...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
         return
 
-    print(f"📊 Totale candele caricate per l'analisi: {len(candles)}")
+    print(f"📊 Totale candele caricate: {len(candles)}")
     
     wins = 0
     losses = 0
     totale_operazioni = 0
-    interruzioni_sicurezza = 0
-
-    SL_VAL = 2.500
-    TP_VAL = 2.000
-    MAX_SOGLIA_SICUREZZA = 2.800  # Oltre questa escursione avversa, consideriamo Loss di protezione
+    superamenti_2800 = 0
 
     for i in range(120, len(candles) - 10):
         subset = candles[:i+1]
@@ -89,6 +89,7 @@ def main():
         swing_high = max(highs)
         swing_low = min(lows)
 
+        # Filtri Ultra-Rigidi
         volume_confermato = vol_attuale >= (vol_medio * 1.8)
         momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * 0.45)
         estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.4)
@@ -112,18 +113,16 @@ def main():
         if segnale:
             totale_operazioni += 1
             esito = "IN_CORSO"
-            superata_sicurezza = False
+            max_escursione = 0.0
 
             for future_c in candles[i+1 : i+15]:
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
                 if segnale == "SELL":
-                    distanza_avversa = f_high - prezzo_attuale
-                    if distanza_avversa >= MAX_SOGLIA_SICUREZZA:
-                        esito = "LOSS"
-                        superata_sicurezza = True
-                        break
+                    escursione = f_high - prezzo_attuale
+                    if escursione > max_escursione:
+                        max_escursione = escursione
 
                     if f_high >= sl:
                         esito = "WIN"
@@ -131,12 +130,11 @@ def main():
                     elif f_low <= tp:
                         esito = "LOSS"
                         break
+
                 elif segnale == "BUY":
-                    distanza_avversa = prezzo_attuale - f_low
-                    if distanza_avversa >= MAX_SOGLIA_SICUREZZA:
-                        esito = "LOSS"
-                        superata_sicurezza = True
-                        break
+                    escursione = prezzo_attuale - f_low
+                    if escursione > max_escursione:
+                        max_escursione = escursione
 
                     if f_low <= sl:
                         esito = "WIN"
@@ -149,19 +147,20 @@ def main():
                 wins += 1
             elif esito == "LOSS":
                 losses += 1
-                if superata_sicurezza:
-                    interruzioni_sicurezza += 1
 
-            print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} {'(Interrotto per sicurezza)' if superata_sicurezza else ''}")
+            if max_escursione >= 2.800:
+                superamenti_2800 += 1
+
+            print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} | Max Escursione: {max_escursione:.3f}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE CON HARD STOP ANTI-SLIPPAGE (Soglia 2.800):")
+    print(f"📈 REPORT FINALE (SL {SL_VAL:.3f} / TP {TP_VAL:.3f}):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win (Prese SL pulite): {wins}")
-    print(f"• Loss Totali (inclusi stop di sicurezza): {losses}")
-    print(f"• Interventi Hard Stop (>= 2.800): {interruzioni_sicurezza}")
+    print(f"• Win (Prese SL): {wins}")
+    print(f"• Loss (Prese TP): {losses}")
     win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
-    print(f"• Nuovo Win Rate protetto: {win_rate:.2f}%")
+    print(f"• Win Rate: {win_rate:.2f}%")
+    print(f"• Trade con escursione massima >= 2.800: {superamenti_2800}")
     print("===============================")
 
 if __name__ == "__main__":
