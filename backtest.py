@@ -41,13 +41,34 @@ def calcola_ema(closes, periodo):
         ema = (close - ema) * multiplier + ema
     return ema
 
+def calcola_vwap_intraday(candles, index):
+    """Calcola il VWAP cumulativo dall'inizio della giornata corrente fino all'indice."""
+    current_date = candles[index]['datetime'].split(' ')[0]
+    p_v_sum = 0.0
+    v_sum = 0.0
+    for i in range(index, -1, -1):
+        c_date = candles[i]['datetime'].split(' ')[0]
+        if c_date != current_date:
+            break
+        h = float(candles[i]['high'])
+        l = float(candles[i]['low'])
+        cl = float(candles[i]['close'])
+        v = float(candles[i].get('volume', 0))
+        typical_price = (h + l + cl) / 3.0
+        p_v_sum += typical_price * v
+        v_sum += v
+    
+    if v_sum == 0:
+        return float(candles[index]['close'])
+    return p_v_sum / v_sum
+
 def is_orario_consentito(datetime_str):
     dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
     ora_minuti = dt.hour * 60 + dt.minute
     return config.ORA_INIZIO_MINUTI <= ora_minuti <= config.ORA_FINE_MINUTI
 
 def main():
-    print(f"🔄 Avvio Backtest (Filtri Rilassati & Finestra 1 Ora / Max {config.MAX_FUTURE_CANDLES} candele)...")
+    print(f"🔄 Avvio Backtest con Filtro VWAP Intraday (SL {config.SL_VAL} / TP {config.TP_VAL})...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -57,7 +78,6 @@ def main():
     
     wins = 0
     losses = 0
-    scaduti_senza_target = 0
     totale_operazioni = 0
     superamenti_2800 = 0
 
@@ -79,29 +99,39 @@ def main():
         atr_val = calcola_atr(subset, i)
         ema_20 = calcola_ema(closes, 20)
         ema_30 = calcola_ema(closes, 30)
+        vwap_val = calcola_vwap_intraday(candles, i)
 
         highs = [float(c["high"]) for c in subset[-17:-1]]
         lows = [float(c["low"]) for c in subset[-17:-1]]
         swing_high = max(highs)
         swing_low = min(lows)
 
-        # Filtri aggiornati da config
+        # Filtri base
         volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
         momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * config.MOM_MULTIPLIER)
         estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * config.EMA_EXT_MULTIPLIER)
+
+        # Filtro VWAP (se abilitato)
+        vwap_valido = True
+        if config.VWAP_ENABLED:
+            # Per SELL: prezzo deve essere nettamente sopra il VWAP
+            # Per BUY: prezzo deve essere nettamente sotto il VWAP
+            pass # Lo applichiamo direttamente nelle condizioni sotto per chiarezza
 
         segnale = None
         tp = 0.0
         sl = 0.0
 
         if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
-            if volume_confermato and momentum_valido and estensione_valida and ema_20 > ema_30:
+            cond_vwap_sell = (prezzo_attuale >= vwap_val + (atr_val * config.VWAP_EXT_MULTIPLIER)) if config.VWAP_ENABLED else True
+            if volume_confermato and momentum_valido and estensione_valida and ema_20 > ema_30 and cond_vwap_sell:
                 segnale = "SELL"
                 sl = prezzo_attuale + config.SL_VAL
                 tp = prezzo_attuale - config.TP_VAL
 
         elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
-            if volume_confermato and momentum_valido and estensione_valida and ema_20 < ema_30:
+            cond_vwap_buy = (prezzo_attuale <= vwap_val - (atr_val * config.VWAP_EXT_MULTIPLIER)) if config.VWAP_ENABLED else True
+            if volume_confermato and momentum_valido and estensione_valida and ema_20 < ema_30 and cond_vwap_buy:
                 segnale = "BUY"
                 sl = prezzo_attuale - config.SL_VAL
                 tp = prezzo_attuale + config.TP_VAL
@@ -111,7 +141,6 @@ def main():
             esito = "SCADUTO"
             max_escursione = 0.0
 
-            # Controlliamo solo nell'arco delle candele future consentite (es. 4 candele = 1 ora)
             for future_c in candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]:
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
@@ -144,22 +173,19 @@ def main():
                 wins += 1
             elif esito == "LOSS":
                 losses += 1
-            else:
-                scaduti_senza_target += 1  # Né SL né TP presi nell'ora
 
             if max_escursione >= 2.800:
                 superamenti_2800 += 1
 
-            print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} | Max Escursione: {max_escursione:.3f}")
+            print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | VWAP: {vwap_val:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (Filtri Rilassati + Limite 1 Ora):")
+    print(f"📈 REPORT FINALE (Con Filtro VWAP):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese SL): {wins}")
     print(f"• Loss (Prese TP): {losses}")
-    print(f"• Scaduti senza target (entro 1h): {scaduti_senza_target}")
-    win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-    print(f"• Win Rate sui trade conclusi: {win_rate:.2f}%")
+    win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
+    print(f"• Win Rate: {win_rate:.2f}%")
     print(f"• Trade con escursione massima >= 2.800: {superamenti_2800}")
     print("===============================")
 
