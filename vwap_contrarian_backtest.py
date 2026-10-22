@@ -50,7 +50,7 @@ def calcola_vwap_e_bande(candles, index, num_std=2.0):
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP Contrarian...")
+    print("🔄 Avvio Backtest Strategia VWAP Contrarian (Inversa)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -71,6 +71,7 @@ def main():
         segnale = None
         tp, sl = 0.0, 0.0
 
+        # LOGICA INVERSA (CONTRARIAN):
         if prezzo_alto >= upper_band and prezzo_chiusura < upper_band:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
