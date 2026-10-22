@@ -3,7 +3,8 @@
 SYMBOL = "XAU/USD"
 INTERVAL = "15min"
 
-# Target di Rischio / Rendimento
+# Gestione Posizione e Rischio
+LOT_SIZE = 1.04              # Dimensione fissa della posizione (Lotti)
 SL_VAL = 2.300
 TP_VAL = 2.000
 
