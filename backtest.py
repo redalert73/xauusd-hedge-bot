@@ -1,14 +1,15 @@
 import os
 import requests
 from datetime import datetime
+import config
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
 def fetch_historical_data():
     url = "https://api.twelvedata.com/time_series"
     params = {
-        "symbol": "XAU/USD",
-        "interval": "15min",
+        "symbol": config.SYMBOL,
+        "interval": config.INTERVAL,
         "outputsize": 1000,
         "apikey": TWELVE_DATA_API_KEY
     }
@@ -19,7 +20,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_atr(candles, index, periodo=14):
+def calcola_atr(candles, index, periodo=config.ATR_PERIOD):
     if index < periodo:
         return 15.0
     tr_list = []
@@ -43,16 +44,10 @@ def calcola_ema(closes, periodo):
 def is_orario_consentito(datetime_str):
     dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
     ora_minuti = dt.hour * 60 + dt.minute
-    inizio = 5 * 60 + 45   # 05:45
-    fine = 20 * 60         # 20:00
-    return inizio <= ora_minuti <= fine
+    return config.ORA_INIZIO_MINUTI <= ora_minuti <= config.ORA_FINE_MINUTI
 
 def main():
-    # PARAMETRI SCELTI: SL 2.300 / TP 2.000
-    SL_VAL = 2.300
-    TP_VAL = 2.000
-
-    print(f"🔄 Avvio Backtest (SL {SL_VAL:.3f} / TP {TP_VAL:.3f})...")
+    print(f"🔄 Avvio Backtest sincronizzato (SL {config.SL_VAL} / TP {config.TP_VAL})...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -80,7 +75,7 @@ def main():
         vol_attuale = volumi[-1]
         vol_medio = sum(volumi[-21:-1]) / 20 if len(volumi) >= 21 else vol_attuale
 
-        atr_val = calcola_atr(subset, i, periodo=14)
+        atr_val = calcola_atr(subset, i)
         ema_20 = calcola_ema(closes, 20)
         ema_30 = calcola_ema(closes, 30)
 
@@ -89,26 +84,25 @@ def main():
         swing_high = max(highs)
         swing_low = min(lows)
 
-        # Filtri Ultra-Rigidi
-        volume_confermato = vol_attuale >= (vol_medio * 1.8)
-        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * 0.45)
-        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.4)
+        volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
+        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * config.MOM_MULTIPLIER)
+        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * config.EMA_EXT_MULTIPLIER)
 
         segnale = None
         tp = 0.0
         sl = 0.0
 
-        if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
+        if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
             if volume_confermato and momentum_valido and estensione_valida and ema_20 > ema_30:
                 segnale = "SELL"
-                sl = prezzo_attuale + SL_VAL
-                tp = prezzo_attuale - TP_VAL
+                sl = prezzo_attuale + config.SL_VAL
+                tp = prezzo_attuale - config.TP_VAL
 
-        elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
+        elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
             if volume_confermato and momentum_valido and estensione_valida and ema_20 < ema_30:
                 segnale = "BUY"
-                sl = prezzo_attuale - SL_VAL
-                tp = prezzo_attuale + TP_VAL
+                sl = prezzo_attuale - config.SL_VAL
+                tp = prezzo_attuale + config.TP_VAL
 
         if segnale:
             totale_operazioni += 1
@@ -154,7 +148,7 @@ def main():
             print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} | Max Escursione: {max_escursione:.3f}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (SL {SL_VAL:.3f} / TP {TP_VAL:.3f}):")
+    print(f"📈 REPORT FINALE (SL {config.SL_VAL} / TP {config.TP_VAL}):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese SL): {wins}")
     print(f"• Loss (Prese TP): {losses}")
