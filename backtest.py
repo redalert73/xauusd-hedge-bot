@@ -47,7 +47,7 @@ def is_orario_consentito(datetime_str):
     return config.ORA_INIZIO_MINUTI <= ora_minuti <= config.ORA_FINE_MINUTI
 
 def main():
-    print(f"🔄 Avvio Backtest sincronizzato (SL {config.SL_VAL} / TP {config.TP_VAL})...")
+    print(f"🔄 Avvio Backtest (Filtri Rilassati & Finestra 1 Ora / Max {config.MAX_FUTURE_CANDLES} candele)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -57,10 +57,11 @@ def main():
     
     wins = 0
     losses = 0
+    scaduti_senza_target = 0
     totale_operazioni = 0
     superamenti_2800 = 0
 
-    for i in range(120, len(candles) - 10):
+    for i in range(120, len(candles) - config.MAX_FUTURE_CANDLES):
         subset = candles[:i+1]
         current_candle = subset[-1]
         
@@ -84,6 +85,7 @@ def main():
         swing_high = max(highs)
         swing_low = min(lows)
 
+        # Filtri aggiornati da config
         volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
         momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * config.MOM_MULTIPLIER)
         estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * config.EMA_EXT_MULTIPLIER)
@@ -106,10 +108,11 @@ def main():
 
         if segnale:
             totale_operazioni += 1
-            esito = "IN_CORSO"
+            esito = "SCADUTO"
             max_escursione = 0.0
 
-            for future_c in candles[i+1 : i+15]:
+            # Controlliamo solo nell'arco delle candele future consentite (es. 4 candele = 1 ora)
+            for future_c in candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]:
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
@@ -141,6 +144,8 @@ def main():
                 wins += 1
             elif esito == "LOSS":
                 losses += 1
+            else:
+                scaduti_senza_target += 1  # Né SL né TP presi nell'ora
 
             if max_escursione >= 2.800:
                 superamenti_2800 += 1
@@ -148,12 +153,13 @@ def main():
             print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} | Max Escursione: {max_escursione:.3f}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (SL {config.SL_VAL} / TP {config.TP_VAL}):")
+    print(f"📈 REPORT FINALE (Filtri Rilassati + Limite 1 Ora):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese SL): {wins}")
     print(f"• Loss (Prese TP): {losses}")
-    win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
-    print(f"• Win Rate: {win_rate:.2f}%")
+    print(f"• Scaduti senza target (entro 1h): {scaduti_senza_target}")
+    win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
+    print(f"• Win Rate sui trade conclusi: {win_rate:.2f}%")
     print(f"• Trade con escursione massima >= 2.800: {superamenti_2800}")
     print("===============================")
 
