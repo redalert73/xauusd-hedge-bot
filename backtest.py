@@ -40,7 +40,7 @@ def calcola_ema(closes, periodo):
     return ema
 
 def main():
-    print("🔄 Avvio Backtest Avanzato XAU/USD (Filtri EMA Stretti + SL 2.20 / TP 2.00)...")
+    print("🔄 Avvio Backtest XAU/USD (Filtri EMA + SL 2.200 / TP 2.000)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -52,8 +52,8 @@ def main():
     losses = 0
     totale_operazioni = 0
 
-    SL_VAL = 2.20
-    TP_VAL = 2.00
+    SL_VAL = 2.200
+    TP_VAL = 2.000
 
     for i in range(120, len(candles) - 10):
         subset = candles[:i+1]
@@ -65,11 +65,8 @@ def main():
         vol_medio = sum(volumi[-21:-1]) / 20 if len(volumi) >= 21 else vol_attuale
 
         atr_val = calcola_atr(subset, i, periodo=14)
-        
-        # Calcolo EMA 20, 30, 100
         ema_20 = calcola_ema(closes, 20)
         ema_30 = calcola_ema(closes, 30)
-        ema_100 = calcola_ema(closes, 100)
 
         highs = [float(c["high"]) for c in subset[-17:-1]]
         lows = [float(c["low"]) for c in subset[-17:-1]]
@@ -77,15 +74,12 @@ def main():
         swing_low = min(lows)
 
         volume_confermato = vol_attuale >= (vol_medio * 1.2)
+        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.3)
 
         segnale = None
         tp = 0.0
         sl = 0.0
 
-        # FILTRO DI ESTENSIONE EMA: Il prezzo deve essere ben distanziato dalla EMA 20 (iperestensione)
-        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.3)
-
-        # Logica Inversa + Filtro EMA + SL/TP Fissi
         if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
             if volume_confermato and estensione_valida and ema_20 > ema_30:
                 segnale = "SELL"
@@ -128,7 +122,7 @@ def main():
             print(f"[{subset[-1]['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE BACKTEST (Filtri EMA + SL 2.20 / TP 2.00):")
+    print(f"📈 REPORT FINALE BACKTEST (SL 2.200 / TP 2.000):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese TP): {wins}")
     print(f"• Loss (Prese SL): {losses}")
