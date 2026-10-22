@@ -1,8 +1,10 @@
+# Contrarian_VWAP_and_Breakout_Elite.py
+
 import os
 import requests
 import math
 from datetime import datetime
-import config_breakout as config
+import config
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -82,17 +84,28 @@ def calcola_vwap_bande(candles, index, periodo=40, num_std=4.0):
     std_dev = math.sqrt(variance_sum / v_sum) if v_sum > 0 else 0.0
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
+def verifica_orario(datetime_str):
+    try:
+        dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+        minuti_correnti = dt.hour * 60 + dt.minute
+        return config.ORA_INIZIO_MINUTI <= minuti_correnti <= config.ORA_FINE_MINUTI
+    except Exception:
+        return True
+
 def valuta_contrarian_vwap(candles):
     i = len(candles) - 1
     current = candles[i]
+    if not verifica_orario(current.get("datetime", "")):
+        return None
+
     p_close = float(current["close"])
     p_high = float(current["high"])
     p_low = float(current["low"])
     range_c = p_high - p_low
 
-    atr = calcola_atr(candles, i, periodo=14)
+    atr = calcola_atr(candles, i, periodo=config.ATR_PERIOD)
     vwap, upper_b, lower_b = calcola_vwap_bande(candles, i, periodo=40, num_std=4.0)
-    vwap_forte = range_c >= (atr * 2.2) if atr > 0 else True
+    vwap_forte = range_c >= (atr * config.VOL_MULTIPLIER) if atr > 0 else True
 
     if p_close >= upper_b and vwap_forte:
         return ("CONTRARIAN VWAP", "SELL", p_close, p_close + config.SL_VAL, p_close - config.TP_VAL)
@@ -103,22 +116,26 @@ def valuta_contrarian_vwap(candles):
 
 def valuta_breakout_elite(candles):
     i = len(candles) - 1
+    current = candles[i]
+    if not verifica_orario(current.get("datetime", "")):
+        return None
+
     periodo_donchian = 25
     if i < periodo_donchian:
         return None
 
-    current = candles[i]
     p_close = float(current["close"])
     p_high = float(current["high"])
     p_low = float(current["low"])
     range_c = p_high - p_low
 
-    atr = calcola_atr(candles, i, periodo=14)
+    atr = calcola_atr(candles, i, periodo=config.ATR_PERIOD)
     sma_50 = calcola_sma(candles, i, periodo=50)
 
     highest_prev = max(float(candles[x]["high"]) for x in range(i - periodo_donchian, i))
     lowest_prev = min(float(candles[x]["low"]) for x in range(i - periodo_donchian, i))
-    breakout_forte = range_c >= (atr * 1.5) if atr > 0 else True
+    
+    breakout_forte = range_c >= (atr * config.MOM_MULTIPLIER * 3) if atr > 0 else True
     trend_long = p_close > sma_50 if sma_50 > 0 else True
     trend_short = p_close < sma_50 if sma_50 > 0 else True
 
@@ -156,7 +173,7 @@ def main():
         )
         invia_notifica(msg)
     else:
-        print("💤 Nessun segnale attivo per Contrarian VWAP & Breakout Elite in questa candela.")
+        print("💤 Nessun segnale attivo o fuori orario operativo.")
 
 if __name__ == "__main__":
     main()
