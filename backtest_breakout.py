@@ -133,7 +133,7 @@ def main():
     print("\n===============================")
     print(f"📈 REPORT FINALE (Breakout):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win: {wins} | Loss: {losses}")
+    print(f"• Win (Prese SL): {wins} | Loss (Prese TP): {losses}")
     win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
     print(f"• Win Rate: {win_rate:.2f}%")
     print("===============================")
