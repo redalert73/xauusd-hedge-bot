@@ -1,6 +1,4 @@
-# .github/workflows/signal_master.yml
-
-name: Contrarian VWAP & Breakout Elite Master Bot
+name: Contrarian Bot Execution
 
 on:
   schedule:
@@ -8,27 +6,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-master-bot:
+  run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/python-spec@v4
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests pandas numpy
 
-      - name: Run Master Signal Script
+      - name: Execute Bot Script
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: |
-          python Contrarian_VWAP_and_Breakout_Elite.py
+        run: python Contrarian_VWAP_and_Breakout_Elite.py
