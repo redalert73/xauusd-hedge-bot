@@ -48,7 +48,7 @@ def is_orario_consentito(datetime_str):
     return inizio <= ora_minuti <= fine
 
 def main():
-    print("🔄 Avvio Backtest XAU/USD (Logica Invertita: SL=WIN, TP=LOSS)...")
+    print("🔄 Avvio Backtest XAU/USD (Filtri Ultra-Rigidi: Vol 1.8x + Momentum 0.45 + SL=WIN)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -87,9 +87,10 @@ def main():
         swing_high = max(highs)
         swing_low = min(lows)
 
-        volume_confermato = vol_attuale >= (vol_medio * 1.5)
-        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * 0.3)
-        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.3)
+        # Filtri di ingresso ultra-rigidi
+        volume_confermato = vol_attuale >= (vol_medio * 1.8)
+        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * 0.45)
+        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.4)
 
         segnale = None
         tp = 0.0
@@ -115,7 +116,6 @@ def main():
                 f_low = float(future_c["low"])
                 
                 if segnale == "SELL":
-                    # LOGICA INVERTITA: SL tocca prima = WIN, TP tocca prima = LOSS
                     if f_high >= sl:
                         esito = "WIN"
                         break
@@ -123,7 +123,6 @@ def main():
                         esito = "LOSS"
                         break
                 elif segnale == "BUY":
-                    # LOGICA INVERTITA: SL tocca prima = WIN, TP tocca prima = LOSS
                     if f_low <= sl:
                         esito = "WIN"
                         break
@@ -139,7 +138,7 @@ def main():
             print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE BACKTEST (SL=WIN / TP=LOSS):")
+    print(f"📈 REPORT FINALE BACKTEST (Ultra-Rigidi):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese SL): {wins}")
     print(f"• Loss (Prese TP): {losses}")
