@@ -1,12 +1,14 @@
-# config.py - Parametri di produzione ad alta selettività (Win Rate 67.74%)
+# config.py - Parametri di produzione con SL/TP e Slippage aggiornati
 
 SYMBOL = "XAU/USD"
 INTERVAL = "15min"
 
 # Gestione Posizione e Rischio
-LOT_SIZE = 1.04              # Dimensione fissa della posizione (Lotti)
-SL_VAL = 2.300
-TP_VAL = 2.000
+LOT_SIZE = 5.55              # Dimensione della posizione (5.55 Lotti Standard)
+TP_VAL = 2.000               # Take Profit (Target perdita per la regola d'esito)
+SL_VAL = 2.400               # Stop Loss (Target vittoria per la regola d'esito)
+MAX_SLIPPAGE = 0.400         # Toleranza massimo slippage (SL max effettivo = 2.800)
+MAX_SL_WITH_SLIPPAGE = SL_VAL + MAX_SLIPPAGE  # 2.800
 
 # Parametri e Filtri di Ingresso (Ottimizzati per il massimo Win Rate)
 ATR_PERIOD = 14
