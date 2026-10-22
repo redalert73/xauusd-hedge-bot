@@ -2,7 +2,7 @@ import os
 import requests
 import math
 from datetime import datetime
-import config
+import config_breakout as config
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
@@ -22,10 +22,8 @@ def fetch_historical_data():
     return []
 
 def calcola_vwap_e_bande(candles, index, num_std=2.0):
-    """Calcola il VWAP intraday e le bande di deviazione standard."""
     current_date = candles[index]['datetime'].split(' ')[0]
-    p_v_sum = 0.0
-    v_sum = 0.0
+    p_v_sum, v_sum = 0.0, 0.0
     typical_prices = []
     
     for i in range(index, -1, -1):
@@ -49,26 +47,16 @@ def calcola_vwap_e_bande(candles, index, num_std=2.0):
     variance_sum = sum(v * ((tp - vwap) ** 2) for tp, v in typical_prices)
     std_dev = math.sqrt(variance_sum / v_sum) if v_sum > 0 else 0.0
 
-    upper_band = vwap + (num_std * std_dev)
-    lower_band = vwap - (num_std * std_dev)
-
-    return vwap, upper_band, lower_band
+    return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP INVERSA (Contrarian Fade)...")
+    print("🔄 Avvio Backtest Strategia VWAP Contrarian...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
         return
 
-    print(f"📊 Totale candele caricate: {len(candles)}")
-    
-    wins = 0
-    losses = 0
-    totale_operazioni = 0
-
-    SL_VAL = 2.300
-    TP_VAL = 2.000
+    wins, losses, totale_operazioni = 0, 0, 0
 
     for i in range(50, len(candles) - config.MAX_FUTURE_CANDLES):
         subset = candles[:i+1]
@@ -81,21 +69,16 @@ def main():
         vwap, upper_band, lower_band = calcola_vwap_e_bande(candles, i, num_std=2.0)
 
         segnale = None
-        tp = 0.0
-        sl = 0.0
+        tp, sl = 0.0, 0.0
 
-        # LOGICA INVERSA (CONTRARIAN):
-        # Se il prezzo buca con decisione la banda superiore -> SHORT (ci aspettiamo che rientri)
         if prezzo_alto >= upper_band and prezzo_chiusura < upper_band:
             segnale = "SELL"
-            sl = prezzo_chiusura + SL_VAL
-            tp = prezzo_chiusura - TP_VAL
-
-        # Se il prezzo buca con decisione la banda inferiore -> LONG (ci aspettiamo che rimbalzi)
+            sl = prezzo_chiusura + config.SL_VAL
+            tp = prezzo_chiusura - config.TP_VAL
         elif prezzo_basso <= lower_band and prezzo_chiusura > lower_band:
             segnale = "BUY"
-            sl = prezzo_chiusura - SL_VAL
-            tp = prezzo_chiusura + TP_VAL
+            sl = prezzo_chiusura - config.SL_VAL
+            tp = prezzo_chiusura + config.TP_VAL
 
         if segnale:
             totale_operazioni += 1
@@ -107,7 +90,7 @@ def main():
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "WIN" # Nota: nel nostro schema contrarian, SL è protettivo o TP è il target
+                        esito = "WIN"
                         break
                     elif f_low <= tp:
                         esito = "LOSS"
@@ -120,18 +103,13 @@ def main():
                         esito = "LOSS"
                         break
             
-            if esito == "WIN":
-                wins += 1
-            elif esito == "LOSS":
-                losses += 1
-
-            print(f"[{current_candle['datetime']}] Segnale Inverso: {segnale} @ {prezzo_chiusura:.2f} | Banda: {upper_band:.2f}/{lower_band:.2f} | Esito: {esito}")
+            if esito == "WIN": wins += 1
+            elif esito == "LOSS": losses += 1
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Inversa / Contrarian):")
+    print(f"📈 REPORT FINALE (VWAP Contrarian):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win: {wins}")
-    print(f"• Loss: {losses}")
+    print(f"• Win: {wins} | Loss: {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
     print(f"• Win Rate: {win_rate:.2f}%")
     print("===============================")
