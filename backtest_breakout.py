@@ -1,5 +1,6 @@
 import os
 import requests
+import math
 from datetime import datetime
 import config_breakout as config
 
@@ -20,121 +21,111 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_atr(candles, index, periodo=config.ATR_PERIOD):
+def calcola_atr(candles, index, periodo=14):
     if index < periodo:
-        return 15.0
-    tr_list = []
+        return 0.0
+    tr_sum = 0.0
     for i in range(index - periodo + 1, index + 1):
-        high = float(candles[i]['high'])
-        low = float(candles[i]['low'])
-        close_prev = float(candles[i-1]['close'])
-        tr = max(high - low, abs(high - close_prev), abs(low - close_prev))
-        tr_list.append(tr)
-    return sum(tr_list) / len(tr_list)
+        h = float(candles[i]['high'])
+        l = float(candles[i]['low'])
+        prev_cl = float(candles[i-1]['close']) if i > 0 else l
+        tr = max(h - l, abs(h - prev_cl), abs(l - prev_cl))
+        tr_sum += tr
+    return tr_sum / periodo
 
-def calcola_ema(closes, periodo):
-    if len(closes) < periodo:
-        return closes[0]
-    multiplier = 2 / (periodo + 1)
-    ema = sum(closes[:periodo]) / periodo
-    for close in closes[periodo:]:
-        ema = (close - ema) * multiplier + ema
-    return ema
-
-def is_orario_consentito(datetime_str):
-    dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
-    ora_minuti = dt.hour * 60 + dt.minute
-    return config.ORA_INIZIO_MINUTI <= ora_minuti <= config.ORA_FINE_MINUTI
+def calcola_sma(candles, index, periodo=50):
+    if index < periodo - 1:
+        return 0.0
+    somma = sum(float(candles[i]['close']) for i in range(index - periodo + 1, index + 1))
+    return somma / periodo
 
 def main():
-    print(f"🔄 Avvio Backtest Breakout (SL {config.SL_VAL} / TP {config.TP_VAL})...")
+    print("🔄 Avvio Backtest Breakout Chirurgico (Donchian 30 + ATR 1.8 + SMA 50)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
         return
 
-    wins, losses, totale_operazioni, superamenti_2800 = 0, 0, 0, 0
+    wins, losses, totale_operazioni = 0, 0, 0
+    cooldown_index = 0
+    
+    periodo_donchian = 30  # Struttura Donchian estesa
 
-    for i in range(120, len(candles) - config.MAX_FUTURE_CANDLES):
+    for i in range(50, len(candles) - config.MAX_FUTURE_CANDLES):
+        if i < cooldown_index:
+            continue
+
         subset = candles[:i+1]
         current_candle = subset[-1]
         
-        if not is_orario_consentito(current_candle["datetime"]):
-            continue
-
-        prezzo_attuale = float(current_candle["close"])
-        apertura_attuale = float(current_candle["open"])
-        closes = [float(c["close"]) for c in subset]
+        prezzo_chiusura = float(current_candle["close"])
+        prezzo_apertura = float(current_candle["open"])
+        prezzo_alto = float(current_candle["high"])
+        prezzo_basso = float(current_candle["low"])
         
-        volumi = [float(c.get("volume", 0)) for c in subset]
-        vol_attuale = volumi[-1]
-        vol_medio = sum(volumi[-21:-1]) / 20 if len(volumi) >= 21 else vol_attuale
+        range_candela = prezzo_alto - prezzo_basso
+        corpo_candela = abs(prezzo_chiusura - prezzo_apertura)
 
-        atr_val = calcola_atr(subset, i)
-        ema_20 = calcola_ema(closes, 20)
-        ema_30 = calcola_ema(closes, 30)
+        # Calcolo massimi e minimi precedenti (Donchian 30)
+        highest_prev = max(float(candles[x]["high"]) for x in range(i - periodo_donchian, i))
+        lowest_prev = min(float(candles[x]["low"]) for x in range(i - periodo_donchian, i))
 
-        highs = [float(c["high"]) for c in subset[-17:-1]]
-        lows = [float(c["low"]) for c in subset[-17:-1]]
-        swing_high = max(highs)
-        swing_low = min(lows)
+        # Filtro ATR Momentum
+        atr = calcola_atr(candles, i, periodo=14)
+        momentum_confermato = (range_candela >= (atr * 1.8)) and (corpo_candela >= (atr * 0.9)) if atr > 0 else True
 
-        volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
-        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * config.MOM_MULTIPLIER)
-        estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * config.EMA_EXT_MULTIPLIER)
+        # Filtro Trend SMA 50
+        sma_50 = calcola_sma(candles, i, periodo=50)
+        trend_long = prezzo_chiusura > sma_50 if sma_50 > 0 else True
+        trend_short = prezzo_chiusura < sma_50 if sma_50 > 0 else True
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
-            if volume_confermato and momentum_valido and estensione_valida and ema_20 > ema_30:
-                segnale = "SELL"
-                sl = prezzo_attuale + config.SL_VAL
-                tp = prezzo_attuale - config.TP_VAL
-
-        elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * config.SWING_OFFSET_MULTIPLIER):
-            if volume_confermato and momentum_valido and estensione_valida and ema_20 < ema_30:
-                segnale = "BUY"
-                sl = prezzo_attuale - config.SL_VAL
-                tp = prezzo_attuale + config.TP_VAL
+        if prezzo_chiusura > highest_prev and momentum_confermato and trend_long:
+            segnale = "BUY"
+            sl = prezzo_chiusura - config.SL_VAL
+            tp = prezzo_chiusura + config.TP_VAL
+        elif prezzo_chiusura < lowest_prev and momentum_confermato and trend_short:
+            segnale = "SELL"
+            sl = prezzo_chiusura + config.SL_VAL
+            tp = prezzo_chiusura - config.TP_VAL
 
         if segnale:
             totale_operazioni += 1
             esito = "SCADUTO"
-            max_escursione = 0.0
+            candles_run = 0
 
-            for future_c in candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]:
+            for future_c_idx, future_c in enumerate(candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]):
+                candles_run = future_c_idx + 1
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
-                if segnale == "SELL":
-                    escursione = f_high - prezzo_attuale
-                    if escursione > max_escursione: max_escursione = escursione
-                    if f_high >= sl:
+                if segnale == "BUY":
+                    if f_high >= tp:
                         esito = "WIN"
                         break
-                    elif f_low <= tp:
+                    elif f_low <= sl:
                         esito = "LOSS"
                         break
-                elif segnale == "BUY":
-                    escursione = prezzo_attuale - f_low
-                    if escursione > max_escursione: max_escursione = escursione
-                    if f_low <= sl:
+                elif segnale == "SELL":
+                    if f_low <= tp:
                         esito = "WIN"
                         break
-                    elif f_high >= tp:
+                    elif f_high >= sl:
                         esito = "LOSS"
                         break
             
             if esito == "WIN": wins += 1
             elif esito == "LOSS": losses += 1
-            if max_escursione >= 2.800: superamenti_2800 += 1
+            
+            cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (Breakout):")
+    print(f"📈 REPORT FINALE (Breakout Chirurgico):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win (Prese SL): {wins} | Loss (Prese TP): {losses}")
-    win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
+    print(f"• Win: {wins} | Loss: {losses}")
+    win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
     print(f"• Win Rate: {win_rate:.2f}%")
     print("===============================")
 
