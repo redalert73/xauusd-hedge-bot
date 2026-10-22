@@ -104,4 +104,72 @@ def check_signal(df: pd.DataFrame) -> str:
     )
     mom_filter = latest["momentum"] > (MOM_MULTIPLIER * latest["atr"])
 
-    
+    if not (vol_filter and mom_filter):
+        return "NONE"
+
+    # Logica Contrarian VWAP Breakout
+    if latest["close"] > latest["vwap"] + (
+        latest["atr"] * SWING_OFFSET_MULTIPLIER
+    ):
+        return "SELL"
+    elif latest["close"] < latest["vwap"] - (
+        latest["atr"] * SWING_OFFSET_MULTIPLIER
+    ):
+        return "BUY"
+
+    return "NONE"
+
+
+def run_bot_cycle(daily_losses_usd: float) -> float:
+    """Esegue un ciclo unico di controllo del mercato."""
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Verifica orario operativo
+    if not is_within_operating_window(now_utc):
+        print(f"[{now_utc.strftime('%H:%M:%S UTC')}] Fuori finestra operativa.")
+        return daily_losses_usd
+
+    # 2. Circuit Breaker Anti-Drawdown
+    if daily_losses_usd >= MAX_DAILY_LOSS:
+        print(
+            f"[{now_utc.strftime('%H:%M:%S UTC')}] Circuit breaker attivo: Raggiunta la soglia di stop giornaliera ({daily_losses_usd}$)."
+        )
+        return daily_losses_usd
+
+    # 3. Download dati di mercato (Twelve Data)
+    url = f"https://api.twelvedata.com/time_series?symbol={SYMBOL}&interval={INTERVAL}&outputsize=100&apikey={TWELVE_DATA_API_KEY}"
+    res = requests.get(url).json()
+
+    if "values" not in res:
+        print("Errore nel recupero dati API Twelve Data.")
+        return daily_losses_usd
+
+    df = pd.DataFrame(res["values"])
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    for col in ["open", "high", "low", "close", "volume"]:
+        df[col] = df[col].astype(float)
+
+    df = df.sort_values("datetime").reset_index(drop=True)
+    df = calculate_indicators(df)
+
+    # 4. Verifica Segnale
+    signal = check_signal(df)
+    if signal != "NONE":
+        price = df.iloc[-1]["close"]
+        msg = (
+            f"🚨 **SEGNALE {signal} - {SYMBOL}** 🚨\n"
+            f"Prezzo: {price:.3f}\n"
+            f"Lotto: {LOT_SIZE}\n"
+            f"Target WIN (SL): {SL_VAL} pts\n"
+            f"Target LOSS (TP): {TP_VAL} pts\n"
+            f"Orario: {now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
+        send_notification(msg)
+
+    return daily_losses_usd
+
+
+if __name__ == "__main__":
+    print("=== Contrarian VWAP & Breakout Elite Bot Avviato ===")
+    daily_loss_tracker = 0.0
+    run_bot_cycle(daily_loss_tracker)
