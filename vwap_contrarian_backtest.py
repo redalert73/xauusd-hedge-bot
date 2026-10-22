@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_vwap_e_bande(candles, index, num_std=1.5): # Abbassato a 1.5 per maggiore reattività
+def calcola_vwap_e_bande(candles, index, num_std=1.5):
     current_date = candles[index]['datetime'].split(' ')[0]
     p_v_sum, v_sum = 0.0, 0.0
     typical_prices = []
@@ -50,7 +50,7 @@ def calcola_vwap_e_bande(candles, index, num_std=1.5): # Abbassato a 1.5 per mag
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP Contrarian (Ottimizzata)...")
+    print("🔄 Avvio Backtest Strategia VWAP Contrarian (Logica personalizzata SL=Win)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -71,14 +71,11 @@ def main():
         segnale = None
         tp, sl = 0.0, 0.0
 
-        # LOGICA CONTRARIAN RILASSATA:
-        # Se il prezzo tocca o supera la banda superiore -> SELL (ci aspettiamo il rientro)
+        # Logica Contrarian
         if prezzo_alto >= upper_band:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
             tp = prezzo_chiusura - config.TP_VAL
-
-        # Se il prezzo tocca o supera la banda inferiore -> BUY (ci aspettiamo il rimbalzo)
         elif prezzo_basso <= lower_band:
             segnale = "BUY"
             sl = prezzo_chiusura - config.SL_VAL
@@ -94,26 +91,26 @@ def main():
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "LOSS"
+                        esito = "WIN"  # Raggiungere SL è il tuo obiettivo (WIN)
                         break
                     elif f_low <= tp:
-                        esito = "WIN"
+                        esito = "LOSS" # Raggiungere TP è l'esito da evitare (LOSS)
                         break
                 elif segnale == "BUY":
                     if f_low <= sl:
-                        esito = "LOSS"
+                        esito = "WIN"  # Raggiungere SL è il tuo obiettivo (WIN)
                         break
                     elif f_high >= tp:
-                        esito = "WIN"
+                        esito = "LOSS" # Raggiungere TP è l'esito da evitare (LOSS)
                         break
             
             if esito == "WIN": wins += 1
             elif esito == "LOSS": losses += 1
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Contrarian Ottimizzata):")
+    print(f"📈 REPORT FINALE (VWAP Contrarian Personalizzata):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win: {wins} | Loss: {losses}")
+    print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
     print(f"• Win Rate: {win_rate:.2f}%")
     print("===============================")
