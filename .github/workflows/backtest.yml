@@ -1,29 +1,26 @@
-name: Contrarian VWAP & Breakout Elite Backtest
+name: Backtest Execution
 
 on:
-  workflow_dispatch: # Permette l'avvio manuale con un clic dalla tab Actions di GitHub
-  schedule:
-    - cron: '0 6 * * *' # (Opzionale) Esegue il backtest automaticamente ogni giorno alle 06:00 UTC
+  workflow_dispatch:
 
 jobs:
   run-backtest:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests pandas numpy
 
-      - name: Run Backtest Master Script
+      - name: Execute Backtest Script
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-        run: |
-          python backtest_master.py
+        run: python backtest_master.py
