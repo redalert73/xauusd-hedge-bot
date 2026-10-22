@@ -21,4 +21,4 @@ jobs:
       - name: Esegui Backtest
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-        run: python backtest.py
+        run: python backtest_breakout.py
