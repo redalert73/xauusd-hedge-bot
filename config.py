@@ -1,4 +1,4 @@
-https://gemini.google.com/app/bf3b4d4fe37a7942?dest=create# config.py - Parametri condivisi per Backtest e Bot Live (XAU/USD)
+# config.py - Parametri aggiornati (Filtri più ampi & Orario esteso)
 
 SYMBOL = "XAU/USD"
 INTERVAL = "15min"
@@ -7,13 +7,16 @@ INTERVAL = "15min"
 SL_VAL = 2.300
 TP_VAL = 2.000
 
-# Parametri e Filtri di Ingresso Ultra-Rigidi
+# Parametri e Filtri di Ingresso (Rilassati per aumentare la frequenza)
 ATR_PERIOD = 14
-VOL_MULTIPLIER = 1.8        # Volume >= Media * 1.8
-MOM_MULTIPLIER = 0.45       # Momentum >= ATR * 0.45
-EMA_EXT_MULTIPLIER = 0.4    # Estensione EMA >= ATR * 0.4
-SWING_OFFSET_MULTIPLIER = 0.2 # Rottura Swing >= ATR * 0.2
+VOL_MULTIPLIER = 1.6        # Ridotto da 1.8 a 1.6
+MOM_MULTIPLIER = 0.4        # Ridotto da 0.45 a 0.4
+EMA_EXT_MULTIPLIER = 0.4
+SWING_OFFSET_MULTIPLIER = 0.2
 
-# Orario Operativo (UTC / Orario Server)
+# Orario Operativo esteso fino alle 20:30
 ORA_INIZIO_MINUTI = 5 * 60 + 45   # 05:45
-ORA_FINE_MINUTI = 20 * 60         # 20:00
+ORA_FINE_MINUTI = 20 * 60 + 30    # 20:30 (Esteso)
+
+# Orizzonte temporale massimo del trade in simulazione (1 ora = 4 candele da 15 min)
+MAX_FUTURE_CANDLES = 4
