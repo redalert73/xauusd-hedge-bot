@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import datetime
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
@@ -39,8 +40,16 @@ def calcola_ema(closes, periodo):
         ema = (close - ema) * multiplier + ema
     return ema
 
+def is_orario_consentito(datetime_str):
+    """Verifica che la candela storica rientri rigorosamente tra le 05:45 e le 20:00."""
+    dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+    ora_minuti = dt.hour * 60 + dt.minute
+    inizio = 5 * 60 + 45   # 05:45
+    fine = 20 * 60         # 20:00
+    return inizio <= ora_minuti <= fine
+
 def main():
-    print("🔄 Avvio Backtest XAU/USD (Filtri EMA + SL 2.200 / TP 2.000)...")
+    print("🔄 Avvio Backtest XAU/USD (Finestra 05:45-20:00 + EMA + SL 2.200 / TP 2.600)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -53,11 +62,17 @@ def main():
     totale_operazioni = 0
 
     SL_VAL = 2.200
-    TP_VAL = 2.000
+    TP_VAL = 2.600  # TP ottimizzato superiore allo SL
 
     for i in range(120, len(candles) - 10):
         subset = candles[:i+1]
-        prezzo_attuale = float(subset[-1]["close"])
+        current_candle = subset[-1]
+        
+        # Blocco orario rigoroso applicato allo storico
+        if not is_orario_consentito(current_candle["datetime"]):
+            continue
+
+        prezzo_attuale = float(current_candle["close"])
         closes = [float(c["close"]) for c in subset]
         
         volumi = [float(c.get("volume", 0)) for c in subset]
@@ -119,10 +134,10 @@ def main():
             elif esito == "LOSS":
                 losses += 1
 
-            print(f"[{subset[-1]['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
+            print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE BACKTEST (SL 2.200 / TP 2.000):")
+    print(f"📈 REPORT FINALE BACKTEST (Orario + EMA + SL/TP):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese TP): {wins}")
     print(f"• Loss (Prese SL): {losses}")
