@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=3.0):
+def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=3.5): # Innalzato a 3.5
     if index < periodo:
         cl = float(candles[index]['close'])
         return cl, cl, cl
@@ -62,7 +62,7 @@ def calcola_atr(candles, index, periodo=14):
     return tr_sum / periodo
 
 def main():
-    print("🔄 Avvio Backtest VWAP Contrarian (Rolling SD 3.0 + Filtro ATR)...")
+    print("🔄 Avvio Backtest VWAP Contrarian (Ultra-Selettivo SD 3.5 + ATR 1.8)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -81,11 +81,11 @@ def main():
         prezzo_basso = float(current_candle["low"])
         range_candela = prezzo_alto - prezzo_basso
 
-        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.0)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.5)
         atr = calcola_atr(candles, i, periodo=14)
 
-        # Filtro di momento: la candela deve avere un'escursione superiore a 1.2 volte l'ATR medio
-        movimento_forte = range_candela >= (atr * 1.2) if atr > 0 else True
+        # Filtro di momento molto rigido (richiede escursione pari a 1.8 volte l'ATR)
+        movimento_forte = range_candela >= (atr * 1.8) if atr > 0 else True
 
         segnale = None
         tp, sl = 0.0, 0.0
@@ -111,17 +111,17 @@ def main():
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "WIN"  # Raggiungimento SL (obiettivo)
+                        esito = "WIN"
                         break
                     elif f_low <= tp:
-                        esito = "LOSS" # Raggiungimento TP (da evitare)
+                        esito = "LOSS"
                         break
                 elif segnale == "BUY":
                     if f_low <= sl:
-                        esito = "WIN"  # Raggiungimento SL (obiettivo)
+                        esito = "WIN"
                         break
                     elif f_high >= tp:
-                        esito = "LOSS" # Raggiungimento TP (da evitare)
+                        esito = "LOSS"
                         break
             
             if esito == "WIN": wins += 1
@@ -130,7 +130,7 @@ def main():
             cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Chirurgico con ATR):")
+    print(f"📈 REPORT FINALE (VWAP Ultra-Selettivo):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
