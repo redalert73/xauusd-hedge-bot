@@ -49,8 +49,20 @@ def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=3.0):
 
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
+def calcola_atr(candles, index, periodo=14):
+    if index < periodo:
+        return 0.0
+    tr_sum = 0.0
+    for i in range(index - periodo + 1, index + 1):
+        h = float(candles[i]['high'])
+        l = float(candles[i]['low'])
+        prev_cl = float(candles[i-1]['close']) if i > 0 else l
+        tr = max(h - l, abs(h - prev_cl), abs(l - prev_cl))
+        tr_sum += tr
+    return tr_sum / periodo
+
 def main():
-    print("🔄 Avvio Backtest VWAP Contrarian (Rolling SD 3.0 + Filtro Volume)...")
+    print("🔄 Avvio Backtest VWAP Contrarian (Rolling SD 3.0 + Filtro ATR)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -63,27 +75,26 @@ def main():
         if i < cooldown_index:
             continue
 
-        subset = candles[:i+1]
-        current_candle = subset[-1]
-        
+        current_candle = candles[i]
         prezzo_chiusura = float(current_candle["close"])
-        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.0)
+        prezzo_alto = float(current_candle["high"])
+        prezzo_basso = float(current_candle["low"])
+        range_candela = prezzo_alto - prezzo_basso
 
-        # Filtro sui volumi (richiede uno spike rispetto alla media mobile recente)
-        volumi = [float(c.get("volume", 0)) for c in subset]
-        vol_attuale = volumi[-1]
-        vol_medio = sum(volumi[-21:-1]) / 20 if len(volumi) >= 21 else vol_attuale
-        volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.0)
+        atr = calcola_atr(candles, i, periodo=14)
+
+        # Filtro di momento: la candela deve avere un'escursione superiore a 1.2 volte l'ATR medio
+        movimento_forte = range_candela >= (atr * 1.2) if atr > 0 else True
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        # Ingresso condizionato da: Banda SD 3.0 + Chiusura oltre la banda + Spike di Volume
-        if prezzo_chiusura >= upper_band and volume_confermato:
+        if prezzo_chiusura >= upper_band and movimento_forte:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
             tp = prezzo_chiusura - config.TP_VAL
-        elif prezzo_chiusura <= lower_band and volume_confermato:
+        elif prezzo_chiusura <= lower_band and movimento_forte:
             segnale = "BUY"
             sl = prezzo_chiusura - config.SL_VAL
             tp = prezzo_chiusura + config.TP_VAL
@@ -100,17 +111,17 @@ def main():
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "WIN"  # Raggiungimento SL
+                        esito = "WIN"  # Raggiungimento SL (obiettivo)
                         break
                     elif f_low <= tp:
-                        esito = "LOSS" # Raggiungimento TP
+                        esito = "LOSS" # Raggiungimento TP (da evitare)
                         break
                 elif segnale == "BUY":
                     if f_low <= sl:
-                        esito = "WIN"  # Raggiungimento SL
+                        esito = "WIN"  # Raggiungimento SL (obiettivo)
                         break
                     elif f_high >= tp:
-                        esito = "LOSS" # Raggiungimento TP
+                        esito = "LOSS" # Raggiungimento TP (da evitare)
                         break
             
             if esito == "WIN": wins += 1
@@ -119,7 +130,7 @@ def main():
             cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Chirurgia Totale - SD 3.0 + Volume):")
+    print(f"📈 REPORT FINALE (VWAP Chirurgico con ATR):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
