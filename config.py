@@ -1,12 +1,12 @@
-# config.py - Parametri di produzione definitivi
+# config.py - Parametri di produzione definitivi (SL = 2.400, TP = 2.200)
 
 SYMBOL = "XAU/USD"
 INTERVAL = "15min"
 
 # Gestione Posizione e Rischio
 LOT_SIZE = 1.04              # Dimensione della posizione (1.04 Lotti Standard)
-SL_VAL = 2.400               # Stop Loss base (Target WIN)
-TP_VAL = 2.000               # Take Profit base (Target LOSS)
+SL_VAL = 2.400               # Stop Loss base (Target WIN = +2.400 USD)
+TP_VAL = 2.200               # Take Profit base (Target LOSS = -2.200 USD)
 MAX_SLIPPAGE = 0.400         # Tolleranza massimo slippage
 MAX_SL_WITH_SLIPPAGE = SL_VAL + MAX_SLIPPAGE  # 2.800 (SL Max effettivo)
 
