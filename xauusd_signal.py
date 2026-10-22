@@ -1,6 +1,5 @@
 import os
 import requests
-import json
 from datetime import datetime
 
 # Credenziali da Variabili d'Ambiente (GitHub Secrets)
@@ -89,7 +88,7 @@ def send_ntfy(title, message):
         print(f"❌ Errore invio ntfy: {e}")
 
 def main():
-    print("🚀 Controllo segnali live XAU/USD (Filtri Ultra-Rigidi)...")
+    print("🚀 Controllo segnali live XAU/USD (Configurazione Definitiva)...")
     candles = fetch_latest_data()
     if not candles:
         print("❌ Impossibile scaricare i dati da Twelve Data.")
@@ -140,7 +139,9 @@ def main():
     segnale = None
     tp = 0.0
     sl = 0.0
-    SL_VAL = 2.500
+    
+    # PARAMETRI DEFINITIVI VALIDATI
+    SL_VAL = 2.300
     TP_VAL = 2.000
 
     if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
@@ -163,7 +164,7 @@ def main():
             f"• **Orario:** `{datetime_str}`\n"
             f"• **Stop Loss (WIN):** `{sl:.2f}`\n"
             f"• **Take Profit (LOSS):** `{tp:.2f}`\n\n"
-            f"⚙️ *Filtri: Vol 1.8x | Mom 0.45 ATR | SL 2.500*"
+            f"⚙️ *Filtri: Vol 1.8x | Mom 0.45 ATR | SL 2.300*"
         )
         print(msg)
         send_telegram(msg)
