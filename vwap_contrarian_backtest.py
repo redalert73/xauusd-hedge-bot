@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=2.2):
+def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=3.0):
     if index < periodo:
         cl = float(candles[index]['close'])
         return cl, cl, cl
@@ -50,7 +50,7 @@ def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=2.2):
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP Contrarian con Rolling VWAP e Cooldown...")
+    print("🔄 Avvio Backtest VWAP Contrarian (Rolling SD 3.0 + Filtro Volume)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -60,7 +60,6 @@ def main():
     cooldown_index = 0
 
     for i in range(60, len(candles) - config.MAX_FUTURE_CANDLES):
-        # Salta le candele in periodo di cooldown (operazione già attiva)
         if i < cooldown_index:
             continue
 
@@ -68,16 +67,23 @@ def main():
         current_candle = subset[-1]
         
         prezzo_chiusura = float(current_candle["close"])
-        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=2.2)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.0)
+
+        # Filtro sui volumi (richiede uno spike rispetto alla media mobile recente)
+        volumi = [float(c.get("volume", 0)) for c in subset]
+        vol_attuale = volumi[-1]
+        vol_medio = sum(volumi[-21:-1]) / 20 if len(volumi) >= 21 else vol_attuale
+        volume_confermato = vol_attuale >= (vol_medio * config.VOL_MULTIPLIER)
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        if prezzo_chiusura >= upper_band:
+        # Ingresso condizionato da: Banda SD 3.0 + Chiusura oltre la banda + Spike di Volume
+        if prezzo_chiusura >= upper_band and volume_confermato:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
             tp = prezzo_chiusura - config.TP_VAL
-        elif prezzo_chiusura <= lower_band:
+        elif prezzo_chiusura <= lower_band and volume_confermato:
             segnale = "BUY"
             sl = prezzo_chiusura - config.SL_VAL
             tp = prezzo_chiusura + config.TP_VAL
@@ -110,11 +116,10 @@ def main():
             if esito == "WIN": wins += 1
             elif esito == "LOSS": losses += 1
             
-            # Attiva il cooldown per tutta la durata del trade
             cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Rolling Selettivo):")
+    print(f"📈 REPORT FINALE (VWAP Chirurgia Totale - SD 3.0 + Volume):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
