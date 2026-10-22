@@ -48,7 +48,7 @@ def is_orario_consentito(datetime_str):
     return inizio <= ora_minuti <= fine
 
 def main():
-    print("🔄 Avvio Backtest XAU/USD (SL 2.400 + Controllo Escursione / Slippage)...")
+    print("🔄 Avvio Backtest XAU/USD (SL 2.500 + Controllo Escursione / Slippage)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -61,7 +61,7 @@ def main():
     totale_operazioni = 0
     superamenti_soglia_3000 = 0
 
-    SL_VAL = 2.400
+    SL_VAL = 2.500  # Modificato a 2.500
     TP_VAL = 2.000
 
     for i in range(120, len(candles) - 10):
@@ -150,7 +150,7 @@ def main():
             print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito} | Max Escursione Avversa: {max_escursione_avversa:.3f}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE CON CONTROLLO SLIPPAGE (SL 2.400):")
+    print(f"📈 REPORT FINALE CON CONTROLLO SLIPPAGE (SL 2.500):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese SL): {wins}")
     print(f"• Loss (Prese TP): {losses}")
