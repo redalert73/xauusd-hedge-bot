@@ -21,15 +21,15 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_vwap_e_bande(candles, index, num_std=2.2):
-    current_date = candles[index]['datetime'].split(' ')[0]
+def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=2.2):
+    if index < periodo:
+        cl = float(candles[index]['close'])
+        return cl, cl, cl
+    
     p_v_sum, v_sum = 0.0, 0.0
     typical_prices = []
     
-    for i in range(index, -1, -1):
-        c_date = candles[i]['datetime'].split(' ')[0]
-        if c_date != current_date:
-            break
+    for i in range(index - periodo + 1, index + 1):
         h = float(candles[i]['high'])
         l = float(candles[i]['low'])
         cl = float(candles[i]['close'])
@@ -50,25 +50,29 @@ def calcola_vwap_e_bande(candles, index, num_std=2.2):
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP Contrarian Selettiva (SD 2.2)...")
+    print("🔄 Avvio Backtest Strategia VWAP Contrarian con Rolling VWAP e Cooldown...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
         return
 
     wins, losses, totale_operazioni = 0, 0, 0
+    cooldown_index = 0
 
-    for i in range(50, len(candles) - config.MAX_FUTURE_CANDLES):
+    for i in range(60, len(candles) - config.MAX_FUTURE_CANDLES):
+        # Salta le candele in periodo di cooldown (operazione già attiva)
+        if i < cooldown_index:
+            continue
+
         subset = candles[:i+1]
         current_candle = subset[-1]
         
         prezzo_chiusura = float(current_candle["close"])
-        vwap, upper_band, lower_band = calcola_vwap_e_bande(candles, i, num_std=2.2)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=2.2)
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        # Ingresso selettivo basato sulla chiusura fuori dalle bande estese
         if prezzo_chiusura >= upper_band:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
@@ -81,31 +85,36 @@ def main():
         if segnale:
             totale_operazioni += 1
             esito = "SCADUTO"
+            candles_run = 0
 
-            for future_c in candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]:
+            for future_c_idx, future_c in enumerate(candles[i+1 : i + 1 + config.MAX_FUTURE_CANDLES]):
+                candles_run = future_c_idx + 1
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "WIN"  # Raggiungimento SL (obiettivo)
+                        esito = "WIN"  # Raggiungimento SL
                         break
                     elif f_low <= tp:
-                        esito = "LOSS" # Raggiungimento TP (da evitare)
+                        esito = "LOSS" # Raggiungimento TP
                         break
                 elif segnale == "BUY":
                     if f_low <= sl:
-                        esito = "WIN"  # Raggiungimento SL (obiettivo)
+                        esito = "WIN"  # Raggiungimento SL
                         break
                     elif f_high >= tp:
-                        esito = "LOSS" # Raggiungimento TP (da evitare)
+                        esito = "LOSS" # Raggiungimento TP
                         break
             
             if esito == "WIN": wins += 1
             elif esito == "LOSS": losses += 1
+            
+            # Attiva il cooldown per tutta la durata del trade
+            cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Contrarian Selettiva):")
+    print(f"📈 REPORT FINALE (VWAP Rolling Selettivo):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
