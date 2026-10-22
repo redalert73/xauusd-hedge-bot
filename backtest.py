@@ -41,7 +41,6 @@ def calcola_ema(closes, periodo):
     return ema
 
 def is_orario_consentito(datetime_str):
-    """Verifica che la candela storica rientri rigorosamente tra le 05:45 e le 20:00."""
     dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
     ora_minuti = dt.hour * 60 + dt.minute
     inizio = 5 * 60 + 45   # 05:45
@@ -49,7 +48,7 @@ def is_orario_consentito(datetime_str):
     return inizio <= ora_minuti <= fine
 
 def main():
-    print("🔄 Avvio Backtest XAU/USD (Finestra 05:45-20:00 + EMA + SL 2.200 / TP 2.600)...")
+    print("🔄 Avvio Backtest XAU/USD (Logica Invertita: SL=WIN, TP=LOSS)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -62,17 +61,17 @@ def main():
     totale_operazioni = 0
 
     SL_VAL = 2.200
-    TP_VAL = 2.600  # TP ottimizzato superiore allo SL
+    TP_VAL = 2.000
 
     for i in range(120, len(candles) - 10):
         subset = candles[:i+1]
         current_candle = subset[-1]
         
-        # Blocco orario rigoroso applicato allo storico
         if not is_orario_consentito(current_candle["datetime"]):
             continue
 
         prezzo_attuale = float(current_candle["close"])
+        apertura_attuale = float(current_candle["open"])
         closes = [float(c["close"]) for c in subset]
         
         volumi = [float(c.get("volume", 0)) for c in subset]
@@ -88,7 +87,8 @@ def main():
         swing_high = max(highs)
         swing_low = min(lows)
 
-        volume_confermato = vol_attuale >= (vol_medio * 1.2)
+        volume_confermato = vol_attuale >= (vol_medio * 1.5)
+        momentum_valido = abs(prezzo_attuale - apertura_attuale) >= (atr_val * 0.3)
         estensione_valida = abs(prezzo_attuale - ema_20) >= (atr_val * 0.3)
 
         segnale = None
@@ -96,13 +96,13 @@ def main():
         sl = 0.0
 
         if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
-            if volume_confermato and estensione_valida and ema_20 > ema_30:
+            if volume_confermato and momentum_valido and estensione_valida and ema_20 > ema_30:
                 segnale = "SELL"
                 sl = prezzo_attuale + SL_VAL
                 tp = prezzo_attuale - TP_VAL
 
         elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
-            if volume_confermato and estensione_valida and ema_20 < ema_30:
+            if volume_confermato and momentum_valido and estensione_valida and ema_20 < ema_30:
                 segnale = "BUY"
                 sl = prezzo_attuale - SL_VAL
                 tp = prezzo_attuale + TP_VAL
@@ -115,18 +115,20 @@ def main():
                 f_low = float(future_c["low"])
                 
                 if segnale == "SELL":
+                    # LOGICA INVERTITA: SL tocca prima = WIN, TP tocca prima = LOSS
                     if f_high >= sl:
-                        esito = "LOSS"
+                        esito = "WIN"
                         break
                     elif f_low <= tp:
-                        esito = "WIN"
-                        break
-                elif segnale == "BUY":
-                    if f_low <= sl:
                         esito = "LOSS"
                         break
-                    elif f_high >= tp:
+                elif segnale == "BUY":
+                    # LOGICA INVERTITA: SL tocca prima = WIN, TP tocca prima = LOSS
+                    if f_low <= sl:
                         esito = "WIN"
+                        break
+                    elif f_high >= tp:
+                        esito = "LOSS"
                         break
             
             if esito == "WIN":
@@ -137,10 +139,10 @@ def main():
             print(f"[{current_candle['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE BACKTEST (Orario + EMA + SL/TP):")
+    print(f"📈 REPORT FINALE BACKTEST (SL=WIN / TP=LOSS):")
     print(f"• Operazioni Totali: {totale_operazioni}")
-    print(f"• Win (Prese TP): {wins}")
-    print(f"• Loss (Prese SL): {losses}")
+    print(f"• Win (Prese SL): {wins}")
+    print(f"• Loss (Prese TP): {losses}")
     win_rate = (wins / totale_operazioni * 100) if totale_operazioni > 0 else 0
     print(f"• Win Rate: {win_rate:.2f}%")
     print("===============================")
