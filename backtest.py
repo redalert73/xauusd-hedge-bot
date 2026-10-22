@@ -8,14 +8,14 @@ def fetch_historical_data():
     params = {
         "symbol": "XAU/USD",
         "interval": "15min",
-        "outputsize": 1000,  # Prende fino a 1000 candele storiche
+        "outputsize": 1000,
         "apikey": TWELVE_DATA_API_KEY
     }
     response = requests.get(url, params=params, timeout=15)
     if response.status_code == 200:
         data = response.json()
         if "values" in data:
-            return list(reversed(data["values"]))  # Dal passato al presente
+            return list(reversed(data["values"]))
     return []
 
 def calcola_atr(candles, index, periodo=14):
@@ -30,17 +30,8 @@ def calcola_atr(candles, index, periodo=14):
         tr_list.append(tr)
     return sum(tr_list) / len(tr_list)
 
-def calcola_ema(closes, periodo):
-    if len(closes) < periodo:
-        return closes[0]
-    multiplier = 2 / (periodo + 1)
-    ema = sum(closes[:periodo]) / periodo
-    for close in closes[periodo:]:
-        ema = (close - ema) * multiplier + ema
-    return ema
-
 def main():
-    print("🔄 Avvio Backtest Storico XAU/USD (Logica Inversa)...")
+    print("🔄 Avvio Backtest Storico XAU/USD (SL 2.20, TP 2.00)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -52,11 +43,12 @@ def main():
     losses = 0
     totale_operazioni = 0
 
-    # Scorriamo le candele simulando il passato (lasciando spazio per gli indicatori)
+    SL_VAL = 2.20
+    TP_VAL = 2.00
+
     for i in range(120, len(candles) - 10):
         subset = candles[:i+1]
         prezzo_attuale = float(subset[-1]["close"])
-        closes = [float(c["close"]) for c in subset]
         
         volumi = [float(c.get("volume", 0)) for c in subset]
         vol_attuale = volumi[-1]
@@ -64,7 +56,6 @@ def main():
 
         atr_val = calcola_atr(subset, i, periodo=14)
         
-        # Swing high/low sulle 16 candele precedenti
         highs = [float(c["high"]) for c in subset[-17:-1]]
         lows = [float(c["low"]) for c in subset[-17:-1]]
         swing_high = max(highs)
@@ -76,24 +67,23 @@ def main():
         tp = 0.0
         sl = 0.0
 
-        # Logica Inversa
+        # Logica Inversa + SL/TP Fissi
         if prezzo_attuale > swing_high and (prezzo_attuale - swing_high) > (atr_val * 0.2):
             if volume_confermato:
                 segnale = "SELL"
-                sl = prezzo_attuale + (atr_val * 1.5)
-                tp = prezzo_attuale - (atr_val * 3.0)
+                sl = prezzo_attuale + SL_VAL
+                tp = prezzo_attuale - TP_VAL
 
         elif prezzo_attuale < swing_low and (swing_low - prezzo_attuale) > (atr_val * 0.2):
             if volume_confermato:
                 segnale = "BUY"
-                sl = prezzo_attuale - (atr_val * 1.5)
-                tp = prezzo_attuale + (atr_val * 3.0)
+                sl = prezzo_attuale - SL_VAL
+                tp = prezzo_attuale + TP_VAL
 
         if segnale:
             totale_operazioni += 1
-            # Simuliamo il risultato guardando le candele future
             esito = "IN_CORSO"
-            for future_c in candles[i+1 : i+15]: # Controlliamo le 15 candele successive
+            for future_c in candles[i+1 : i+15]:
                 f_high = float(future_c["high"])
                 f_low = float(future_c["low"])
                 
@@ -120,7 +110,7 @@ def main():
             print(f"[{subset[-1]['datetime']}] Segnale: {segnale} @ {prezzo_attuale:.2f} | Esito: {esito}")
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE BACKTEST:")
+    print(f"📈 REPORT FINALE BACKTEST (SL 2.20 / TP 2.00):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Prese TP): {wins}")
     print(f"• Loss (Prese SL): {losses}")
