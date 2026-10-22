@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_vwap_e_bande(candles, index, num_std=2.0):
+def calcola_vwap_e_bande(candles, index, num_std=1.5): # Abbassato a 1.5 per maggiore reattività
     current_date = candles[index]['datetime'].split(' ')[0]
     p_v_sum, v_sum = 0.0, 0.0
     typical_prices = []
@@ -50,7 +50,7 @@ def calcola_vwap_e_bande(candles, index, num_std=2.0):
     return vwap, vwap + (num_std * std_dev), vwap - (num_std * std_dev)
 
 def main():
-    print("🔄 Avvio Backtest Strategia VWAP Contrarian (Inversa)...")
+    print("🔄 Avvio Backtest Strategia VWAP Contrarian (Ottimizzata)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -66,17 +66,20 @@ def main():
         prezzo_alto = float(current_candle["high"])
         prezzo_basso = float(current_candle["low"])
 
-        vwap, upper_band, lower_band = calcola_vwap_e_bande(candles, i, num_std=2.0)
+        vwap, upper_band, lower_band = calcola_vwap_e_bande(candles, i, num_std=1.5)
 
         segnale = None
         tp, sl = 0.0, 0.0
 
-        # LOGICA INVERSA (CONTRARIAN):
-        if prezzo_alto >= upper_band and prezzo_chiusura < upper_band:
+        # LOGICA CONTRARIAN RILASSATA:
+        # Se il prezzo tocca o supera la banda superiore -> SELL (ci aspettiamo il rientro)
+        if prezzo_alto >= upper_band:
             segnale = "SELL"
             sl = prezzo_chiusura + config.SL_VAL
             tp = prezzo_chiusura - config.TP_VAL
-        elif prezzo_basso <= lower_band and prezzo_chiusura > lower_band:
+
+        # Se il prezzo tocca o supera la banda inferiore -> BUY (ci aspettiamo il rimbalzo)
+        elif prezzo_basso <= lower_band:
             segnale = "BUY"
             sl = prezzo_chiusura - config.SL_VAL
             tp = prezzo_chiusura + config.TP_VAL
@@ -91,24 +94,24 @@ def main():
                 
                 if segnale == "SELL":
                     if f_high >= sl:
-                        esito = "WIN"
+                        esito = "LOSS"
                         break
                     elif f_low <= tp:
-                        esito = "LOSS"
+                        esito = "WIN"
                         break
                 elif segnale == "BUY":
                     if f_low <= sl:
-                        esito = "WIN"
+                        esito = "LOSS"
                         break
                     elif f_high >= tp:
-                        esito = "LOSS"
+                        esito = "WIN"
                         break
             
             if esito == "WIN": wins += 1
             elif esito == "LOSS": losses += 1
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Contrarian):")
+    print(f"📈 REPORT FINALE (VWAP Contrarian Ottimizzata):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win: {wins} | Loss: {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
