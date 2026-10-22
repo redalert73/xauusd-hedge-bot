@@ -21,7 +21,7 @@ def fetch_historical_data():
             return list(reversed(data["values"]))
     return []
 
-def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=3.5): # Innalzato a 3.5
+def calcola_rolling_vwap_e_bande(candles, index, periodo=50, num_std=4.0): # Innalzato a 4.0 SD
     if index < periodo:
         cl = float(candles[index]['close'])
         return cl, cl, cl
@@ -62,7 +62,7 @@ def calcola_atr(candles, index, periodo=14):
     return tr_sum / periodo
 
 def main():
-    print("🔄 Avvio Backtest VWAP Contrarian (Ultra-Selettivo SD 3.5 + ATR 1.8)...")
+    print("🔄 Avvio Backtest VWAP Contrarian Precisione Titanica (SD 4.0 + ATR 2.2)...")
     candles = fetch_historical_data()
     if not candles:
         print("❌ Impossibile scaricare i dati storici.")
@@ -81,11 +81,11 @@ def main():
         prezzo_basso = float(current_candle["low"])
         range_candela = prezzo_alto - prezzo_basso
 
-        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=3.5)
+        vwap, upper_band, lower_band = calcola_rolling_vwap_e_bande(candles, i, periodo=50, num_std=4.0)
         atr = calcola_atr(candles, i, periodo=14)
 
-        # Filtro di momento molto rigido (richiede escursione pari a 1.8 volte l'ATR)
-        movimento_forte = range_candela >= (atr * 1.8) if atr > 0 else True
+        # Filtro di momento a soglia massima (range >= 2.2 * ATR)
+        movimento_forte = range_candela >= (atr * 2.2) if atr > 0 else True
 
         segnale = None
         tp, sl = 0.0, 0.0
@@ -130,7 +130,7 @@ def main():
             cooldown_index = i + candles_run
 
     print("\n===============================")
-    print(f"📈 REPORT FINALE (VWAP Ultra-Selettivo):")
+    print(f"📈 REPORT FINALE (VWAP Precisione Titanica):")
     print(f"• Operazioni Totali: {totale_operazioni}")
     print(f"• Win (Raggiunto SL): {wins} | Loss (Raggiunto TP): {losses}")
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
