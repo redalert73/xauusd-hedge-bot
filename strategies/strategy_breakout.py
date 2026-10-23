@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA BREAKOUT - ALTA SELETTIVITÀ
+# STRATEGIA BREAKOUT - FREQUENZA INTRA-DAY (6-8 TOT/GIORNO)
 # ==========================================
 
 import pandas as pd
@@ -7,14 +7,14 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 60:
+    if df is None or len(df) < 15:
         return signals
 
     high = df['high']
     low = df['low']
     close = df['close']
 
-    lookback = 45  # Finestra più ampia per filtrare il rumore
+    lookback = 8  
     rolling_high = high.rolling(window=lookback).max()
     rolling_low = low.rolling(window=lookback).min()
 
@@ -24,10 +24,9 @@ def run(df):
         prev_high = rolling_high.iloc[i - 1]
         prev_low = rolling_low.iloc[i - 1]
 
-        # Falsa rottura netta con chiusura chiaramente rientrata nel canale
-        if high.iloc[i] > prev_high and c_close < (prev_high - (prev_high * 0.0005)):
+        if high.iloc[i] > prev_high and c_close < prev_high:
             signals.append((current_time, "BUY", c_close))
-        elif low.iloc[i] < prev_low and c_close > (prev_low + (prev_low * 0.0005)):
+        elif low.iloc[i] < prev_low and c_close > prev_low:
             signals.append((current_time, "SELL", c_close))
 
     return signals
