@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA VWAP - ULTRA SELETTIVA
+# STRATEGIA VWAP - FREQUENZA INTRA-DAY (6-8 TOT/GIORNO)
 # ==========================================
 
 import pandas as pd
@@ -7,7 +7,7 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 25:
         return signals
 
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -29,7 +29,7 @@ def run(df):
     cum_vol = df_temp.groupby('date')['vol'].cumsum()
     vwap = cum_tp_vol / cum_vol
 
-    for i in range(30, len(df)):
+    for i in range(10, len(df)):
         current_time = df.index[i]
         c_close = close.iloc[i]
         c_vwap = vwap.iloc[i]
@@ -39,11 +39,10 @@ def run(df):
             
         dist_pct = abs(c_close - c_vwap) / c_vwap
 
-        # Soglia di eccesso elevata (0.5%) per eliminare i falsi segnali e catturare solo i punti di svolta estremi
-        if dist_pct >= 0.005:
-            if c_close > c_vwap and close.iloc[i-1] > c_close and close.iloc[i-2] > close.iloc[i-1]:
+        if dist_pct >= 0.0008:
+            if c_close > c_vwap and close.iloc[i-1] > c_close:
                 signals.append((current_time, "BUY", c_close))
-            elif c_close < c_vwap and close.iloc[i-1] < c_close and close.iloc[i-2] < close.iloc[i-1]:
+            elif c_close < c_vwap and close.iloc[i-1] < c_close:
                 signals.append((current_time, "SELL", c_close))
 
     return signals
