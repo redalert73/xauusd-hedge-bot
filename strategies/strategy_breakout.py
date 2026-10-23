@@ -1,33 +1,40 @@
 import pandas as pd
 
 def run(df: pd.DataFrame):
-    """
-    Breakout Elite Strategy (Anti-Fakeout Calibration)
-    Richiede rotture estese con margine di sicurezza per eliminare i falsi segnali.
-    """
-    if df.empty or len(df) < 30:
+    if df.empty or len(df) < 20:
         return []
 
     signals = []
     df = df.copy()
+    tp = (df['high'] + df['low'] + df['close']) / 3
 
-    # Donchian Channels con margine anti-fakeout
-    window = 24
-    df['upper_channel'] = df['high'].shift(1).rolling(window=window).max()
-    df['lower_channel'] = df['low'].shift(1).rolling(window=window).min()
+    vwap = tp.rolling(window=14).mean()
+    std = tp.rolling(window=14).std()
+    
+    # Deviazione bilanciata per intercettare gli eccessi senza bloccare tutto
+    upper_band = vwap + (1.8 * std)
+    lower_band = vwap - (1.8 * std)
 
-    latest_row = df.iloc[-1]
-    dt = pd.to_datetime(latest_row['datetime'])
-    price = latest_row['close']
+    # RSI
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
 
-    # Filtro orario
-    if 6 <= dt.hour < 20 or (dt.hour == 20 and dt.minute <= 30):
-        # Tolleranza d'uscita per confermare la rottura reale
-        buffer = 0.50  # 50 pips di margine oltre il canale
-        
-        if price > (latest_row['upper_channel'] + buffer):
-            signals.append((dt, "BREAKOUT_BUY", price))
-        elif price < (latest_row['lower_channel'] - buffer):
-            signals.append((dt, "BREAKOUT_SELL", price))
+    for i in range(1, len(df)):
+        row = df.iloc[i]
+        dt = pd.to_datetime(row['datetime'])
+
+        if not (6 <= dt.hour < 20 or (dt.hour == 20 and dt.minute <= 30)):
+            continue
+
+        price = row['close']
+        c_rsi = rsi.iloc[i]
+
+        if price > upper_band.iloc[i] and c_rsi > 65:
+            signals.append((dt, "VWAP_SELL", price))
+        elif price < lower_band.iloc[i] and c_rsi < 35:
+            signals.append((dt, "VWAP_BUY", price))
 
     return signals
