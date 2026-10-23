@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA BREAKOUT ELITE (M5) - ATTIVA
+# STRATEGIA BREAKOUT ELITE (M5) - ALTA SELETTIVITÀ
 # ==========================================
 
 import pandas as pd
@@ -8,19 +8,19 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < config.ATR_PERIOD + 10:
+    if df is None or len(df) < config.ATR_PERIOD + 15:
         return signals
 
     high = df['high']
     low = df['low']
     close = df['close']
+    open_p = df['open'] if 'open' in df.columns else close
     volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
 
-    # Calcolo ATR per misurare la volatilità reale su M5
     tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
     atr = tr.rolling(window=config.ATR_PERIOD).mean()
     
-    lookback = 10
+    lookback = 12
     rolling_high = high.rolling(window=lookback).max()
     rolling_low = low.rolling(window=lookback).min()
     vol_ma = volume.rolling(window=lookback).mean()
@@ -28,16 +28,19 @@ def run(df):
     for i in range(max(lookback, config.ATR_PERIOD), len(df)):
         current_time = df.index[i]
         c_close = close.iloc[i]
+        c_open = open_p.iloc[i]
         c_vol = volume.iloc[i]
         c_atr = atr.iloc[i]
         
         if pd.isna(c_atr) or c_atr == 0:
             continue
             
-        # Breakout confermato se il prezzo supera il massimo precedente di almeno 0.3 * ATR
-        if c_close > (rolling_high.iloc[i - 1] + (c_atr * 0.3)) and c_vol >= vol_ma.iloc[i]:
-            signals.append((current_time, "BUY", c_close))
-        elif c_close < (rolling_low.iloc[i - 1] - (c_atr * 0.3)) and c_vol >= vol_ma.iloc[i]:
-            signals.append((current_time, "SELL", c_close))
+        # Richiediamo volume superiore alla media (1.2x) e corpo della candela direzionale robusto
+        body_size = abs(c_close - c_open)
+        if c_vol >= (vol_ma.iloc[i] * 1.2) and body_size >= (c_atr * 0.4):
+            if c_close > (rolling_high.iloc[i - 1] + (c_atr * 0.2)):
+                signals.append((current_time, "BUY", c_close))
+            elif c_close < (rolling_low.iloc[i - 1] - (c_atr * 0.2)):
+                signals.append((current_time, "SELL", c_close))
 
     return signals
