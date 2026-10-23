@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI (M5) - ELITE PRECISION
+# STRATEGIA FIBONACCI (M5) - BILANCIATA
 # ==========================================
 
 import pandas as pd
@@ -8,7 +8,7 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < 60:
+    if df is None or len(df) < 50:
         return signals
 
     high = df['high']
@@ -16,7 +16,7 @@ def run(df):
     close = df['close']
     open_p = df['open'] if 'open' in df.columns else close
 
-    window = 35
+    window = 25  # Finestra leggermente più reattiva per guadagnare qualche segnale in più
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
     ema50 = close.ewm(span=50, adjust=False).mean()
@@ -35,15 +35,11 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        # Tolleranza stretta e candela direzionale forte (corpo candela > 40% dell'escursione)
-        body_size = abs(c_close - c_open)
-        total_range = high.iloc[i] - low.iloc[i]
-        
-        if total_range > 0 and (body_size / total_range) >= 0.4:
-            if abs(c_close - fib_618) <= (diff * 0.002):
-                if c_close > c_ema and c_close > c_open:
-                    signals.append((current_time, "BUY", c_close))
-                elif c_close < c_ema and c_close < c_open:
-                    signals.append((current_time, "SELL", c_close))
+        # Tolleranza leggermente ampliata allo 0.4% per generare qualche trade in più mantenendo il filtro EMA
+        if abs(c_close - fib_618) <= (diff * 0.004):
+            if c_close > c_ema and c_close > c_open:
+                signals.append((current_time, "BUY", c_close))
+            elif c_close < c_ema and c_close < c_open:
+                signals.append((current_time, "SELL", c_close))
 
     return signals
