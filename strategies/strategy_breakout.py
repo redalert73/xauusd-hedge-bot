@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA BREAKOUT - FREQUENZA INTRA-DAY (6-8 TOT/GIORNO)
+# STRATEGIA BREAKOUT - TARGET 3-4 SEGNALI/GIORNO
 # ==========================================
 
 import pandas as pd
@@ -7,14 +7,14 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 15:
+    if df is None or len(df) < 12:
         return signals
 
     high = df['high']
     low = df['low']
     close = df['close']
 
-    lookback = 8  
+    lookback = 6  
     rolling_high = high.rolling(window=lookback).max()
     rolling_low = low.rolling(window=lookback).min()
 
