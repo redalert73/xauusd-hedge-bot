@@ -21,8 +21,10 @@ def run_strategy_backtest(df, strategy_func, name):
     total_signals = len(signals)
     win_rate = (wins / total_signals * 100) if total_signals > 0 else 0.0
     
-    # Calcolo PnL basato sui parametri di rischio configurati
-    pnl = (wins * config.TP_VAL * config.LOT_SIZE * 10) - (losses * config.SL_VAL * config.LOT_SIZE * 10)
+    # Calcolo PnL basato sui punti reali dell'oro e 1.04 lotti
+    # Con 1.04 lotti, 1 punto di movimento dell'oro = $104
+    point_value = 100 * config.LOT_SIZE
+    pnl = (wins * config.TP_VAL * point_value) - (losses * config.SL_VAL * point_value)
     
     return {
         "name": name,
