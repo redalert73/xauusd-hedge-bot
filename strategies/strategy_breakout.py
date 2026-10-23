@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA BREAKOUT - TARGET: FALSE ROTTURE (SL)
+# STRATEGIA BREAKOUT - RIDUZIONE SEGNALI (ALTA QUALITÀ)
 # ==========================================
 
 import pandas as pd
@@ -7,14 +7,16 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 15:
+    if df is None or len(df) < 30:
         return signals
 
     high = df['high']
     low = df['low']
     close = df['close']
+    volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
+    vol_ma = volume.rolling(window=20).mean()
 
-    lookback = 10
+    lookback = 20  # Aumentato per filtrare i micro-breakout
     rolling_high = high.rolling(window=lookback).max()
     rolling_low = low.rolling(window=lookback).min()
 
@@ -23,12 +25,19 @@ def run(df):
         c_close = close.iloc[i]
         prev_high = rolling_high.iloc[i - 1]
         prev_low = rolling_low.iloc[i - 1]
+        c_vol = volume.iloc[i]
+        avg_vol = vol_ma.iloc[i]
 
-        # Falsa rottura rialzista (Fakeout): il prezzo supera il massimo ma chiude sotto -> Segnale BUY che prende lo SL al ribasso
-        if high.iloc[i] > prev_high and c_close < prev_high:
-            signals.append((current_time, "BUY", c_close))
-        # Falsa rottura ribassista: il prezzo rompe il minimo ma chiude sopra -> Segnale SELL che prende lo SL al rialzo
-        elif low.iloc[i] < prev_low and c_close > prev_low:
-            signals.append((current_time, "SELL", c_close))
+        if pd.isna(avg_vol):
+            continue
+
+        # Richiediamo volumi alti sulla falsa rottura per evitare falsi segnali casuali
+        if c_vol >= (avg_vol * 1.3):
+            # Falsa rottura rialzista (Fakeout forte)
+            if high.iloc[i] > prev_high and c_close < prev_high:
+                signals.append((current_time, "BUY", c_close))
+            # Falsa rottura ribassista (Fakeout forte)
+            elif low.iloc[i] < prev_low and c_close > prev_low:
+                signals.append((current_time, "SELL", c_close))
 
     return signals
