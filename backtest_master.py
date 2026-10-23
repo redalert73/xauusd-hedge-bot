@@ -43,24 +43,23 @@ def run_backtest():
     print("=" * 50)
     
     lot_size = 1.04
-    sl_usd = 2400.0
-    tp_usd = 2000.0
+    sl_usd = 2400.0  # SL (con meno davanti nel PnL)
+    tp_usd = 2000.0  # TP (senza segno o positivo nel PnL)
     
-    # Conversione USD in punti di prezzo per XAU/USD (1 lotto = 100 oz -> 1.04 lotti = 104 oz)
     sl_distance = sl_usd / (lot_size * 100)
     tp_distance = tp_usd / (lot_size * 100)
     
-    print(f"🔹 Lotto: {lot_size} | Target WIN (SL): ${sl_usd} | Target LOSS (TP): ${tp_usd}")
+    print(f"🔹 Lotto: {lot_size} | Target WIN (SL): -${sl_usd} | Target LOSS (TP): +${tp_usd}")
     
     df = download_twelve_data()
     if df is None or df.empty:
         return
         
-    # Filtro sessione operativa 08:00 - 20:00
+    # Filtro sessione operativa 08:00 - 20:00 (escludendo l'ultima ora per dati troncati)
     df = df.between_time('08:00', '20:00')
     
     print(f"🔹 Finestra Temporale Dinamica: da {df.index[0]} a {df.index[-1]}")
-    print(f"🔹 Sessione Operativa: 08:00 - 20:00")
+    print(f"🔹 Sessione Operativa: 08:00 - 20:00 (Esclusa 19:00-20:00)")
     print("-" * 50)
     
     strategies_registry = {
@@ -80,7 +79,7 @@ def run_backtest():
         trades = []
         
         for sig_time, sig_type, sig_price in signals:
-            # Filtro: escludiamo i segnali nell'ultima ora della sessione (dalle 19:00 in poi)
+            # Filtro ultima ora (dalle 19:00 in poi)
             if hasattr(sig_time, 'hour') and sig_time.hour >= 19:
                 continue
             elif isinstance(sig_time, str):
@@ -96,7 +95,6 @@ def run_backtest():
             except KeyError:
                 continue
                 
-            # Simulazione forward bar-by-bar
             outcome = None
             pnl = 0.0
             
@@ -109,14 +107,16 @@ def run_backtest():
                     hit_tp = c_high >= (sig_price + tp_distance)
                     
                     if hit_sl and hit_tp:
-                        outcome = "LOSS"
-                        pnl = -sl_usd
+                        outcome = "LOSS_TP"
+                        pnl = tp_usd
                         break
                     elif hit_sl:
+                        # SL RAGGIUNTO = -sl_usd
                         outcome = "WIN_SL"
                         pnl = -sl_usd
                         break
                     elif hit_tp:
+                        # TP RAGGIUNTO = tp_usd (senza meno)
                         outcome = "LOSS_TP"
                         pnl = tp_usd
                         break
@@ -126,14 +126,16 @@ def run_backtest():
                     hit_tp = c_low <= (sig_price - tp_distance)
                     
                     if hit_sl and hit_tp:
-                        outcome = "LOSS"
-                        pnl = -sl_usd
+                        outcome = "LOSS_TP"
+                        pnl = tp_usd
                         break
                     elif hit_sl:
+                        # SL RAGGIUNTO = -sl_usd
                         outcome = "WIN_SL"
                         pnl = -sl_usd
                         break
                     elif hit_tp:
+                        # TP RAGGIUNTO = tp_usd (senza meno)
                         outcome = "LOSS_TP"
                         pnl = tp_usd
                         break
@@ -158,7 +160,7 @@ def run_backtest():
         
         print(f"\n📈 REPORT FINALE [{strat_name}]:")
         print(f"- Numero Totale Trade: {total_trades}")
-        print(f"- Win Rate: {win_rate:.2f}%")
+        print(f"- Win Rate (su SL): {win_rate:.2f}% ({win_sl_count} WIN su {total_trades})")
         print(f"- PnL Netto Complessivo: ${total_pnl:,.2f}\n")
         print("=" * 50)
         
