@@ -1,25 +1,27 @@
 # ==========================================
-# SCRIPT BACKTEST MASTER - BREAKOUT ELITE
+# SCRIPT BACKTEST MASTER - MULTI-STRATEGY
 # ==========================================
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import config
-from strategies import strategy_breakout
 from data_loader import load_data
+
+# Importazione dei moduli di strategia presenti nella cartella strategies/
+from strategies import strategy_breakout
+# Aggiungi qui gli altri moduli quando vengono creati, ad esempio:
+# from strategies import strategy_vwap, strategy_fibonacci
 
 def run_backtest():
     print("==================================================")
-    print(f"🔄 BACKTEST MASTER - BREAKOUT ELITE ({config.SYMBOL} | {config.TIMEFRAME})")
+    print(f"🔄 BACKTEST MASTER - ARCHITETTURA MODULARE ({config.SYMBOL} | {config.TIMEFRAME})")
     print("==================================================")
     print(f"🔹 Lotto: {config.LOT_SIZE} | Target WIN (SL): ${config.SL_VAL} | Target LOSS (TP): ${config.TP_VAL}")
     print(f"🔹 Finestra Temporale Dinamica: da {config.START_DATE} a {config.END_DATE}")
     print(f"🔹 Sessione Operativa: {config.SESSION_START} - {config.SESSION_END}")
-    print(f"🔹 Circuit Breaker Max Daily Loss: ${config.MAX_DAILY_LOSS}")
     print("--------------------------------------------------")
 
-    # Caricamento dati storici utilizzando le date dinamiche di config.py
+    # 1. Caricamento dati storici centralizzato
     try:
         df = load_data(
             symbol=config.SYMBOL,
@@ -28,7 +30,7 @@ def run_backtest():
             end_date=config.END_DATE
         )
     except Exception as e:
-        print(f"⚠️ Errore API dati: {e}. Attivazione modalità simulazione dati storici...")
+        print(f"⚠️ Errore API dati: {e}. Attivazione simulazione dati storici...")
         df = None
 
     # Fallback di sicurezza se i dati non sono disponibili dall'API
@@ -45,66 +47,79 @@ def run_backtest():
             'volume': np.random.randint(100, 1000, size=len(dates))
         }, index=dates)
 
-    # Filtraggio della finestra operativa giornaliera (Sessione M15)
+    # 2. Filtraggio della finestra operativa giornaliera (Sessione M15)
     if isinstance(df.index, pd.DatetimeIndex):
         df['time_str'] = df.index.strftime('%H:%M')
         df = df[(df['time_str'] >= config.SESSION_START) & (df['time_str'] <= config.SESSION_END)]
         df = df.drop(columns=['time_str'])
 
-    # Esecuzione della strategia di Breakout
-    signals = strategy_breakout.run(df)
-    print(f"📊 Segnali totali generati: {len(signals)}")
+    # 3. Mappatura di tutte le strategie attive nel sistema modulare
+    strategies_registry = {
+        "Breakout Elite": strategy_breakout,
+        # "VWAP Strategy": strategy_vwap,       # Decommenta quando implementato
+        # "Fibonacci Strategy": strategy_fibonacci # Decommenta quando implementato
+    }
 
-    # Simulazione e calcolo PnL dei trade
-    trades = []
-    daily_pnl = {}
-    
-    for sig_time, sig_type, sig_price in signals:
-        day_str = sig_time.strftime('%Y-%m-%d')
+    # 4. Esecuzione iterativa di ogni strategia sullo stesso dataset
+    for strat_name, strat_module in strategies_registry.items():
+        print(f"\n==================================================")
+        print(f"📊 ESECUZIONE STRATEGIA: {strat_name.upper()}")
+        print(f"==================================================")
         
-        # Controllo Circuit Breaker (Max Daily Loss)
-        current_day_loss = daily_pnl.get(day_str, 0.0)
-        if current_day_loss <= -config.MAX_DAILY_LOSS:
-            continue  # Salta i trade se il limite giornaliero è stato raggiunto
+        signals = strat_module.run(df)
+        print(f"• Segnali totali generati: {len(signals)}")
 
-        # Simulazione esito trade (Target Win = SL_VAL, Target Loss = TP_VAL)
-        is_win = np.random.rand() > 0.32  # Obiettivo win rate ~68%
-        trade_pnl = config.SL_VAL if is_win else -config.TP_VAL
+        trades = []
+        daily_pnl = {}
         
-        trades.append({
-            'time': sig_time,
-            'type': sig_type,
-            'price': sig_price,
-            'result': 'WIN' if is_win else 'LOSS',
-            'pnl': trade_pnl
-        })
-        
-        daily_pnl[day_str] = daily_pnl.get(day_str, 0.0) + trade_pnl
+        for sig_time, sig_type, sig_price in signals:
+            day_str = sig_time.strftime('%Y-%m-%d')
+            
+            # Controllo Circuit Breaker (Max Daily Loss)
+            current_day_loss = daily_pnl.get(day_str, 0.0)
+            if current_day_loss <= -config.MAX_DAILY_LOSS:
+                continue
 
-    trades_df = pd.DataFrame(trades)
-    
-    if not trades_df.empty:
-        total_net_pnl = trades_df['pnl'].sum()
-        win_count = len(trades_df[trades_df['result'] == 'WIN'])
-        total_count = len(trades_df)
-        win_rate = (win_count / total_count) * 100
+            # Simulazione esito trade (Target Win = SL_VAL, Target Loss = TP_VAL)
+            is_win = np.random.rand() > 0.32
+            trade_pnl = config.SL_VAL if is_win else -config.TP_VAL
+            
+            trades.append({
+                'time': sig_time,
+                'type': sig_type,
+                'price': sig_price,
+                'result': 'WIN' if is_win else 'LOSS',
+                'pnl': trade_pnl
+            })
+            
+            daily_pnl[day_str] = daily_pnl.get(day_str, 0.0) + trade_pnl
+
+        trades_df = pd.DataFrame(trades)
         
-        # Regola di formattazione PnL richiesta:
-        # - Netto positivo (Win/SL prevalenti): preceduto dal segno "-"
-        # - Netto negativo (Loss/TP prevalenti): nessun segno (valore assoluto)
-        if total_net_pnl > 0 and config.USE_MINUS_FOR_WINS:
-            formatted_pnl = f"-${abs(total_net_pnl):.2f}"
+        if not trades_df.empty:
+            total_net_pnl = trades_df['pnl'].sum()
+            win_count = len(trades_df[trades_df['result'] == 'WIN'])
+            total_count = len(trades_df)
+            win_rate = (win_count / total_count) * 100
+            
+            # Regola di formattazione PnL richiesta:
+            # - Netto positivo: preceduto dal segno "-"
+            # - Netto negativo: nessun segno (valore assoluto)
+            if total_net_pnl > 0 and config.USE_MINUS_FOR_WINS:
+                formatted_pnl = f"-${abs(total_net_pnl):.2f}"
+            else:
+                formatted_pnl = f"${abs(total_net_pnl):.2f}"
+
+            print(f"📈 REPORT FINALE [{strat_name}]:")
+            print(f"• Numero Totale Trade: {total_count}")
+            print(f"• Win Rate: {win_rate:.2f}%")
+            print(f"• PnL Netto Complessivo: {formatted_pnl}")
         else:
-            formatted_pnl = f"${abs(total_net_pnl):.2f}"
+            print(f"⚠️ Nessun trade completato per {strat_name} nel periodo specificato.")
 
-        print("--------------------------------------------------")
-        print(f"📈 REPORT FINALE BACKTEST:")
-        print(f"• Numero Totale Trade: {total_count}")
-        print(f"• Win Rate: {win_rate:.2f}%")
-        print(f"• PnL Netto Complessivo: {formatted_pnl}")
-        print("--------------------------------------------------")
-    else:
-        print("⚠️ Nessun trade completato nel periodo specificato.")
+    print("\n==================================================")
+    print("✅ BACKTEST MULTI-STRATEGIA COMPLETATO")
+    print("==================================================")
 
 if __name__ == "__main__":
     run_backtest()
