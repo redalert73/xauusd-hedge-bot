@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA VWAP (M5) - ULTRA SELETTIVA
+# STRATEGIA VWAP (M5) - FREQUENZA BILANCIATA
 # ==========================================
 
 import pandas as pd
@@ -8,7 +8,7 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 30:
         return signals
 
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -32,7 +32,7 @@ def run(df):
     cum_vol = df_temp.groupby('date')['vol'].cumsum()
     vwap = cum_tp_vol / cum_vol
 
-    for i in range(5, len(df)):
+    for i in range(2, len(df)):
         current_time = df.index[i]
         c_close = close.iloc[i]
         prev_close = close.iloc[i-1]
@@ -43,18 +43,9 @@ def run(df):
         if pd.isna(c_vwap) or pd.isna(prev_vwap) or pd.isna(c_ema):
             continue
             
-        # Distanza minima percentuale dal VWAP per evitare il rumore laterale
-        min_dist = c_close * 0.0015
-        
-        if abs(c_close - c_vwap) >= min_dist:
-            # Richiediamo che le ultime 3 candele confermino la direzione rispetto al VWAP e all'EMA
-            if (prev_close <= prev_vwap and c_close > c_vwap and 
-                close.iloc[i-2] <= vwap.iloc[i-2] and close.iloc[i-3] <= vwap.iloc[i-3] and 
-                c_close > c_ema):
-                signals.append((current_time, "BUY", c_close))
-            elif (prev_close >= prev_vwap and c_close < c_vwap and 
-                  close.iloc[i-2] >= vwap.iloc[i-2] and close.iloc[i-3] >= vwap.iloc[i-3] and 
-                  c_close < c_ema):
-                signals.append((current_time, "SELL", c_close))
+        if prev_close <= prev_vwap and c_close > c_vwap and c_close > c_ema:
+            signals.append((current_time, "BUY", c_close))
+        elif prev_close >= prev_vwap and c_close < c_vwap and c_close < c_ema:
+            signals.append((current_time, "SELL", c_close))
 
     return signals
