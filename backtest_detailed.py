@@ -1,57 +1,85 @@
-import os
-import requests
-import pandas as pd
+import sys
 import config
+import data_loader
+from strategies import strategy_vwap, strategy_breakout, strategy_fibonacci
 
-def fetch_market_data(interval=None):
-    """
-    Scarica i dati storici di mercato da Twelve Data.
-    Supporta l'intervallo dinamico e recupera la chiave API 
-    sia da config.py che dalle variabili d'ambiente di sistema/GitHub.
-    """
-    if interval is None:
-        interval = getattr(config, "INTERVAL", "5min")
-
-    symbol = getattr(config, "SYMBOL", "XAU/USD")
+def run_strategy_backtest(df, strategy_func, name):
+    if df.empty:
+        print(f"⚠️ Attenzione: Il DataFrame per {name} è vuoto!", flush=True)
+        return {"name": name, "total_signals": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "pnl": 0.0}
     
-    # Recupera la chiave API da config o dalle variabili d'ambiente (GitHub Actions Secrets)
-    api_key = getattr(config, "TWELVE_DATA_API_KEY", None)
-    if not api_key:
-        api_key = os.environ.get("TWELVE_DATA_API_KEY")
-
-    if not api_key:
-        print(f"❌ Errore critico: TWELVE_DATA_API_KEY non trovata né in config.py né nelle variabili d'ambiente.")
-        return pd.DataFrame()
-
-    # URL e parametri per l'API di Twelve Data
-    url = f"https://api.twelvedata.com/time_series"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "outputsize": 500,
-        "apikey": api_key,
-        "format": "JSON"
+    signals = strategy_func(df)
+    wins = 0
+    losses = 0
+    
+    for dt, sig_type, price in signals:
+        if "BUY" in sig_type or "LONG" in sig_type:
+            wins += 1
+        else:
+            losses += 1
+            
+    total_signals = len(signals)
+    win_rate = (wins / total_signals * 100) if total_signals > 0 else 0.0
+    
+    # Calcolo PnL basato sui parametri di rischio configurati
+    pnl = (wins * config.TP_VAL * config.LOT_SIZE * 10) - (losses * config.SL_VAL * config.LOT_SIZE * 10)
+    
+    return {
+        "name": name,
+        "total_signals": total_signals,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "pnl": pnl
     }
 
-    try:
-        response = requests.get(url, params=params)
-        data = response.json()
+def main():
+    print("==================================================", flush=True)
+    print("🔬 BACKTEST MULTI-TIMEFRAME (BREAKOUT @ 15min)", flush=True)
+    print("==================================================", flush=True)
+    print(f"⚙️ PARAMETRI: LOT_SIZE={config.LOT_SIZE} | SL={config.SL_VAL} | TP={config.TP_VAL} | MAX_DAILY_LOSS=${config.MAX_DAILY_LOSS}", flush=True)
+    print("-" * 50, flush=True)
 
-        if "values" in data:
-            df = pd.DataFrame(data["values"])
-            # Riconverte le colonne numeriche e la data
-            df['datetime'] = pd.to_datetime(df['datetime'])
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            # Ordina in ordine cronologico crescente
-            df = df.sort_values('datetime').reset_index(drop=True)
-            return df
-        else:
-            print(f"⚠️ Errore nel recupero dati per {interval}: {data.get('message', 'Risposta non valida')}")
-            return pd.DataFrame()
+    # 1. Caricamento Dati M5 (per VWAP e Fibonacci)
+    df_m5 = data_loader.fetch_market_data(interval="5min")
+    if df_m5.empty:
+        print("❌ ERRORE CRITICO: Impossibile scaricare i dati M5 da Twelve Data.", flush=True)
+        sys.exit(1)
+    print(f"✅ Dati M5 scaricati con successo: {len(df_m5)} candele.", flush=True)
 
-    except Exception as e:
-        print(f"❌ Eccezione durante la chiamata API Twelve Data ({interval}): {e}")
-        return pd.DataFrame()
+    # 2. Caricamento Dati M15 (per Breakout Elite)
+    df_m15 = data_loader.fetch_market_data(interval="15min")
+    if df_m15.empty:
+        print("⚠️ Impossibile scaricare M15, eseguo fallback su M5 per Breakout.", flush=True)
+        df_m15 = df_m5
+    else:
+        print(f"✅ Dati M15 scaricati con successo: {len(df_m15)} candele.", flush=True)
+
+    # 3. Esecuzione delle strategie sui rispettivi timeframe
+    results = [
+        run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (M5)"),
+        run_strategy_backtest(df_m15, strategy_breakout.run, "Breakout Elite (M15)"),
+        run_strategy_backtest(df_m5, strategy_fibonacci.run, "Fibonacci Golden Zone (M5)")
+    ]
+
+    # 4. Tabella Sinottica Finale
+    print("\n" + "=" * 80, flush=True)
+    print("📊 RIEPILOGO GENERALE MULTI-TIMEFRAME", flush=True)
+    print("=" * 80, flush=True)
+    print(f"{'STRATEGIA':<28} | {'SEGNALI':<8} | {'WIN':<5} | {'LOSS':<5} | {'WIN RATE':<10} | {'PNL STIMATO':<12}", flush=True)
+    print("-" * 80, flush=True)
+
+    tot_signals = 0
+    tot_pnl = 0.0
+
+    for res in results:
+        tot_signals += res["total_signals"]
+        tot_pnl += res["pnl"]
+        print(f"{res['name']:<28} | {res['total_signals']:<8} | {res['wins']:<5} | {res['losses']:<5} | {res['win_rate']:>8.2f}% | ${res['pnl']:>10.2f}", flush=True)
+
+    print("-" * 80, flush=True)
+    print(f"🏆 PNL COMPLESSIVO COMBINATO: ${tot_pnl:.2f} USD (Segnali totali: {tot_signals})", flush=True)
+    print("==================================================", flush=True)
+
+if __name__ == "__main__":
+    main()
