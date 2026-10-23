@@ -60,12 +60,6 @@ def main():
     results = [
         run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (5 min)"),
         run_strategy_breakout(df_m15, strategy_breakout.run, "Breakout Elite (15 min)"),
-        run_strategy_fibonacci.run, ... # Gestito sotto
-    ]
-    # Sostituito con la chiamata corretta:
-    results = [
-        run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (5 min)"),
-        run_strategy_breakout(df_m15, strategy_breakout.run, "Breakout Elite (15 min)"),
         run_strategy_backtest(df_m5, strategy_fibonacci.run, "Fibonacci Golden Zone (5 min)")
     ]
 
