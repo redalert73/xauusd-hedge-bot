@@ -1,36 +1,44 @@
+# ==========================================
+# STRATEGIA FIBONACCI RETRACEMENT (M5 / M15)
+# ==========================================
+
 import pandas as pd
+import numpy as np
+import config
 
-def run(df: pd.DataFrame):
-    if df.empty or len(df) < 25:
-        return []
-
+def run(df):
+    """
+    Strategia Fibonacci Retracement basata sui dati storici e configurazione centrale.
+    """
     signals = []
-    df = df.copy()
+    if df is None or len(df) < 50:
+        return signals
 
-    lookback = 20
-    
-    for i in range(lookback, len(df)):
-        sub_df = df.iloc[i-lookback:i]
-        recent_high = sub_df['high'].max()
-        recent_low = sub_df['low'].min()
-        diff = recent_high - recent_low
+    high = df['high']
+    low = df['low']
+    close = df['close']
 
+    window = 30
+    rolling_max = high.rolling(window=window).max()
+    rolling_min = low.rolling(window=window).min()
+
+    for i in range(window, len(df)):
+        # Utilizza direttamente l'indice datetime del DataFrame
+        current_time = df.index[i]
+        c_close = close.iloc[i]
+        max_val = rolling_max.iloc[i]
+        min_val = rolling_min.iloc[i]
+        
+        diff = max_val - min_val
         if diff == 0:
             continue
-
-        fib_618 = recent_high - (diff * 0.618)
-        fib_786 = recent_high - (diff * 0.786)
-
-        row = df.iloc[i]
-        dt = pd.to_datetime(row['datetime'])
-
-        if not (6 <= dt.hour < 20 or (dt.hour == 20 and dt.minute <= 30)):
-            continue
-
-        price = row['close']
-        prev_price = df['close'].iloc[i-1]
-
-        if fib_786 <= price <= fib_618 and price > prev_price:
-            signals.append((dt, "FIBO_GOLDEN_BUY", price))
+            
+        fib_618 = max_val - (diff * 0.618)
+        
+        if abs(c_close - fib_618) < (diff * 0.01):
+            if c_close > close.iloc[i-1]:
+                signals.append((current_time, "BUY", c_close))
+            else:
+                signals.append((current_time, "SELL", c_close))
 
     return signals
