@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI (M5) - ALTA SELETTIVITÀ
+# STRATEGIA FIBONACCI (M5) - TARGET 3+/GIORNO
 # ==========================================
 
 import pandas as pd
@@ -8,14 +8,14 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 30:
         return signals
 
     high = df['high']
     low = df['low']
     close = df['close']
 
-    window = 40
+    window = 15  # Reattivo per identificare swing ravvicinati su M5
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
 
@@ -31,11 +31,11 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        # Tolleranza ridotta allo 0.3% e conferma di continuazione a 2 barre
-        if abs(c_close - fib_618) < (diff * 0.003):
-            if c_close > close.iloc[i-1] and close.iloc[i-1] > close.iloc[i-2]:
+        # Tolleranza calibrata allo 0.8% dell'ampiezza per generare 3+ segnali/giorno
+        if abs(c_close - fib_618) <= (diff * 0.008):
+            if c_close > close.iloc[i-1]:
                 signals.append((current_time, "BUY", c_close))
-            elif c_close < close.iloc[i-1] and close.iloc[i-1] < close.iloc[i-2]:
+            elif c_close < close.iloc[i-1]:
                 signals.append((current_time, "SELL", c_close))
 
     return signals
