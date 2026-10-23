@@ -1,28 +1,33 @@
 import pandas as pd
-import config
 
-def run(df: pd.DataFrame) -> list:
-    """Esegue la strategia Breakout Elite e restituisce i segnali."""
+def run(df: pd.DataFrame):
+    """
+    Breakout Elite Strategy (Anti-Fakeout Calibration)
+    Richiede rotture estese con margine di sicurezza per eliminare i falsi segnali.
+    """
+    if df.empty or len(df) < 30:
+        return []
+
     signals = []
-    if df.empty:
-        return signals
+    df = df.copy()
 
-    lookback = 20
-    df["resistance"] = df["high"].rolling(window=lookback).max().shift(1)
-    df["support"] = df["low"].rolling(window=lookback).min().shift(1)
+    # Donchian Channels con margine anti-fakeout
+    window = 24
+    df['upper_channel'] = df['high'].shift(1).rolling(window=window).max()
+    df['lower_channel'] = df['low'].shift(1).rolling(window=window).min()
 
-    for i in range(lookback + 1, len(df)):
-        row = df.iloc[i]
-        dt = row["datetime"]
+    latest_row = df.iloc[-1]
+    dt = pd.to_datetime(latest_row['datetime'])
+    price = latest_row['close']
+
+    # Filtro orario
+    if 6 <= dt.hour < 20 or (dt.hour == 20 and dt.minute <= 30):
+        # Tolleranza d'uscita per confermare la rottura reale
+        buffer = 0.50  # 50 pips di margine oltre il canale
         
-        current_mins = dt.hour * 60 + dt.minute
-        if not (config.ORA_INIZIO_MINUTI <= current_mins <= config.ORA_FINE_MINUTI):
-            continue
+        if price > (latest_row['upper_channel'] + buffer):
+            signals.append((dt, "BREAKOUT_BUY", price))
+        elif price < (latest_row['lower_channel'] - buffer):
+            signals.append((dt, "BREAKOUT_SELL", price))
 
-        # Segnali Breakout Elite
-        if row["close"] > row["resistance"]:
-            signals.append((dt, "[BREAKOUT] BUY (Resistenza rotta)", row["close"]))
-        elif row["close"] < row["support"]:
-            signals.append((dt, "[BREAKOUT] SELL (Supporto rotto)", row["close"]))
-            
     return signals
