@@ -2,14 +2,18 @@
 # CONFIGURAZIONE GLOBALE - BREAKOUT ELITE
 # ==========================================
 
+from datetime import datetime, timedelta
+
 # Parametri operativi e dimensione lotto
 LOT_SIZE = 1.04
 SYMBOL = "XAU/USD"
 TIMEFRAME = "15min"
 
-# Finestra temporale storica per il backtest (Data e Ora)
-START_DATE = "2024-01-01 00:00:00"
-END_DATE = "2026-10-01 23:59:59"
+# Finestra temporale dinamica per il backtest storico
+# START_DATE: 365 giorni indietro rispetto a oggi (modificabile a piacere)
+# END_DATE: Data e ora correnti esatte al momento dell'esecuzione
+START_DATE = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+END_DATE = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # Finestra operativa giornaliera (Sessione di Trading intraday M15)
 # Filtra i segnali per operare solo durante le ore di massima liquidità
