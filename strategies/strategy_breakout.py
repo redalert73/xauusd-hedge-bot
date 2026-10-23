@@ -8,7 +8,7 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < config.ATR_PERIOD + 10:
+    if df is None or len(df) < 15:
         return signals
 
     high = df['high']
@@ -16,28 +16,21 @@ def run(df):
     close = df['close']
     volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
 
-    tr = pd.concat([high - low, abs(high - close.shift()), abs(low - close.shift())], axis=1).max(axis=1)
-    atr = tr.rolling(window=config.ATR_PERIOD).mean()
-    
-    lookback = 10
+    lookback = 8
     rolling_high = high.rolling(window=lookback).max()
     rolling_low = low.rolling(window=lookback).min()
     vol_ma = volume.rolling(window=lookback).mean()
 
-    for i in range(max(lookback, config.ATR_PERIOD), len(df)):
+    for i in range(lookback, len(df)):
         current_time = df.index[i]
         c_close = close.iloc[i]
         c_vol = volume.iloc[i]
-        c_atr = atr.iloc[i]
         
-        if pd.isna(c_atr) or c_atr == 0:
-            continue
-            
-        # Filtro volume bilanciato (1.05x la media) e superamento del canale di Donchian
-        if c_vol >= (vol_ma.iloc[i] * 1.05):
-            if c_close > (rolling_high.iloc[i - 1] + (c_atr * 0.1)):
-                signals.append((current_time, "BUY", c_close))
-            elif c_close < (rolling_low.iloc[i - 1] - (c_atr * 0.1)):
-                signals.append((current_time, "SELL", c_close))
+        min_vol = vol_ma.iloc[i] * 0.9 if not pd.isna(vol_ma.iloc[i]) else 1.0
+        
+        if c_close > rolling_high.iloc[i - 1] and c_vol >= min_vol:
+            signals.append((current_time, "BUY", c_close))
+        elif c_close < rolling_low.iloc[i - 1] and c_vol >= min_vol:
+            signals.append((current_time, "SELL", c_close))
 
     return signals
