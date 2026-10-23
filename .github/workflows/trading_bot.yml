@@ -2,45 +2,31 @@ name: XAUUSD Live Trading Bot
 
 on:
   schedule:
-    # Esegue ogni 5 minuti durante la finestra operativa (06:00 - 20:59 UTC)
-    - cron: '*/5 6-20 * * *'
-  
-  workflow_dispatch:
+    # Esecuzione programmata ogni ora durante la sessione di trading (Lun-Ven, dalle 08:00 alle 20:00)
+    - cron: '0 8-20 * * 1-5'
+  workflow_dispatch: # Consente anche l'avvio manuale da GitHub
 
 jobs:
-  run-trading-bot:
+  run-live-bot:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # Permette al bot di committare il file bot_state.json
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Configurazione ambiente Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Installazione dipendenze
-        run: |
-          python -m pip install --upgrade pip
-          pip install pandas requests
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy requests
 
-      - name: Esecuzione Segnali Operativi
-        env:
-          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: |
-          python main.py
-
-      - name: Salva stato bot (Pausa / Reset)
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add bot_state.json || true
-          git commit -m "Update bot state [skip ci]" || true
-          git push || true
+    - name: Run Modular Production Bot
+      env:
+        TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python production_runner.py
