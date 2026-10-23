@@ -1,25 +1,35 @@
 # ==========================================
-# CONFIGURAZIONE CENTRALE - TRADING BOT
+# CONFIGURAZIONE GLOBALE - BREAKOUT ELITE
 # ==========================================
 
-SYMBOL = "XAU/USD"
-INTERVAL = "15min"
-
-# Gestione Lotti e Valori di Rischio/Target ($2,400 per singolo trade)
+# Parametri operativi e dimensione lotto
 LOT_SIZE = 1.04
-SL_VAL = 23.08       # Distanza in punti dell'oro per rischiare $2,400 (con 1.04 lotti)
-TP_VAL = 23.08       # Distanza in punti dell'oro per guadagnare $2,400 (R:R 1:1)
-MAX_SLIPPAGE = 0.400
+SYMBOL = "XAU/USD"
+TIMEFRAME = "15min"
 
-# Circuit Breaker Anti-Drawdown Giornaliero
-MAX_DAILY_LOSS = 2400.0
+# Finestra temporale storica per il backtest (Data e Ora)
+START_DATE = "2024-01-01 00:00:00"
+END_DATE = "2026-10-01 23:59:59"
 
-# Parametri e Filtri d'Ingresso Ultra-Selettivi (Win Rate Massimizzato)
+# Finestra operativa giornaliera (Sessione di Trading intraday M15)
+# Filtra i segnali per operare solo durante le ore di massima liquidità
+SESSION_START = "08:00"
+SESSION_END = "20:00"
+
+# Parametri di rischio e target in USD
+SL_VAL = 2400.0  # Target WIN principale (in USD)
+TP_VAL = 2000.0  # Livello di LOSS da evitare (in USD)
+
+# Limiti di rischio e Circuit Breaker
+MAX_DAILY_LOSS = 3000.0  # Limite massimo giornaliero da non raggiungere
+
+# Filtri di attivazione e volatilità del Breakout
 ATR_PERIOD = 14
-VOL_MULTIPLIER = 2.00        
-MOM_MULTIPLIER = 0.60        
-SWING_OFFSET_MULTIPLIER = 0.20 
+VOL_MULTIPLIER = 2.0
+MOMENTUM_THRESHOLD = 0.6
+PRICE_OFFSET = 0.2
 
-# Finestra Operativa (06:00 - 20:30 UTC)
-ORA_INIZIO_MINUTI = 6 * 60 + 0   
-ORA_FINE_MINUTI = 20 * 60 + 30
+# Regola di formattazione report:
+# - I risultati netti positivi (prevalenza di Win/SL) mostrano il segno "-"
+# - I risultati negativi (prevalenza di Loss/TP) mostrano nessun segno (valore assoluto)
+USE_MINUS_FOR_WINS = True
