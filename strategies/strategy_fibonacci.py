@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI - TARGET MAGGIORE ATTIVITÀ
+# STRATEGIA FIBONACCI - AUMENTO FREQUENZA SEGNALI
 # ==========================================
 
 import pandas as pd
@@ -15,7 +15,7 @@ def run(df):
     close = df['close']
     open_p = df['open'] if 'open' in df.columns else close
 
-    window = 12
+    window = 10  # Finestra più corta per cogliere più strutture di prezzo
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
 
@@ -32,7 +32,8 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        if abs(c_close - fib_618) <= (diff * 0.0035):
+        # Tolleranza ampliata per catturare più ingressi al giorno
+        if abs(c_close - fib_618) <= (diff * 0.0050):
             if c_close < c_open:
                 signals.append((current_time, "BUY", c_close))
             elif c_close > c_open:
