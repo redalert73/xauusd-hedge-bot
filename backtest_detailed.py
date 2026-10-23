@@ -21,9 +21,19 @@ def run_strategy_backtest(df, strategy_func, name):
     total_signals = len(signals)
     win_rate = (wins / total_signals * 100) if total_signals > 0 else 0.0
     
-    # PnL bloccato sulla tua regola: Win = SL_VAL, Loss = TP_VAL
+    # Calcolo PnL grezzo basato su Win = SL_VAL e Loss = TP_VAL
     point_value = 100 * config.LOT_SIZE
-    pnl = (wins * config.SL_VAL * point_value) - (losses * config.TP_VAL * point_value)
+    raw_pnl = (wins * config.SL_VAL * point_value) - (losses * config.TP_VAL * point_value)
+    
+    # Applicazione della regola sui segni richiesta:
+    # - Se prevalgono le Win (SL), il PnL finale mostra il segno "-"
+    # - Se prevalgono le Loss (TP), il PnL finale mostra nessun segno (valore assoluto positivo)
+    if raw_pnl > 0:
+        pnl = -raw_pnl
+    elif raw_pnl < 0:
+        pnl = abs(raw_pnl)
+    else:
+        pnl = 0.0
     
     return {
         "name": name,
