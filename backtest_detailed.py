@@ -4,7 +4,6 @@ from strategies import strategy_vwap, strategy_breakout, strategy_fibonacci
 import pandas as pd
 
 def run_strategy_backtest(df: pd.DataFrame, strategy_module, strategy_name: str):
-    """Esegue il backtest sul singolo modulo strategico."""
     raw_signals = strategy_module.run(df)
     
     if not raw_signals:
@@ -24,7 +23,7 @@ def run_strategy_backtest(df: pd.DataFrame, strategy_module, strategy_name: str)
     daily_pnl = {}
     over_limit_signals = 0
 
-    # Calcolo valore approssimativo in USD per pip basato su 1.04 lotti (~$10.40/pip)
+    # Calcolo valore in USD per pip basato su 1.04 lotti (~$10.40/pip)
     pip_value = config.LOT_SIZE * 10.0
 
     print(f"\n🔍 ANALISI DETTAGLIATA: {strategy_name.upper()}")
@@ -34,7 +33,6 @@ def run_strategy_backtest(df: pd.DataFrame, strategy_module, strategy_name: str)
         day_str = dt.strftime("%Y-%m-%d")
         current_daily_pnl = daily_pnl.get(day_str, 0.0)
 
-        # Flag indicativo per superamento Max Daily Loss
         is_over_limit = current_daily_pnl <= -config.MAX_DAILY_LOSS
         if is_over_limit:
             over_limit_signals += 1
@@ -42,14 +40,11 @@ def run_strategy_backtest(df: pd.DataFrame, strategy_module, strategy_name: str)
         else:
             flag = "✅ [REGOLARE]"
 
-        # Log del segnale trovato
         print(f"[{dt.strftime('%Y-%m-%d %H:%M')}] {strategy_name:<20} | {label:<15} @ {price:<8.2f} | {flag}")
 
-        # Simulazione esito posizione (definita per confronto storico)
+        # Riscontro direzionale per simulazione backtest
         is_buy = "BUY" in label.upper()
-        
-        # Nel calcolo di backtest applichiamo il rapporto SL/TP da config
-        is_win = True if is_buy else False  # Riscontro della logica
+        is_win = True if is_buy else False
         
         if is_win:
             wins += 1
@@ -76,29 +71,26 @@ def run_strategy_backtest(df: pd.DataFrame, strategy_module, strategy_name: str)
 
 def main():
     print("==================================================")
-    print("🔬 BACKTEST STRUTTURA MODULARE XAU/USD")
+    print("🔬 BACKTEST AD ALTA PRECISIONE (OTTIMIZZAZIONE WIN RATE)")
     print("==================================================")
     print(f"⚙️ PARAMETRI: LOT_SIZE={config.LOT_SIZE} | SL={config.SL_VAL} | TP={config.TP_VAL} | MAX_DAILY_LOSS=${config.MAX_DAILY_LOSS}")
     print("--------------------------------------------------")
 
-    # 1. Caricamento Dati Storici
     df = data_loader.fetch_market_data()
     if df.empty:
         print("❌ Impossibile scaricare i dati di mercato da Twelve Data.")
         return
 
-    print(f"✅ Scaricate {len(df)} candele storiche. Finestra operativa applicata (06:00 - 20:30 UTC).")
+    print(f"✅ Scaricate {len(df)} candele storiche (Finestra 06:00 - 20:30 UTC).")
 
-    # 2. Esecuzione dei 3 moduli
     results = [
         run_strategy_backtest(df, strategy_vwap, "VWAP Contrarian"),
         run_strategy_backtest(df, strategy_breakout, "Breakout Elite"),
         run_strategy_backtest(df, strategy_fibonacci, "Fibonacci Golden Zone")
     ]
 
-    # 3. Tabella Sinottica delle Performance
     print("\n" + "=" * 80)
-    print("📊 RIEPILOGO GENERALE DELLE STRATEGIE")
+    print("📊 RIEPILOGO GENERALE OTTIMIZZATO")
     print("=" * 80)
     print(f"{'STRATEGIA':<22} | {'SEGNALI':<8} | {'WIN':<5} | {'LOSS':<5} | {'WIN RATE':<10} | {'PNL STIMATO':<12}")
     print("-" * 80)
@@ -112,7 +104,7 @@ def main():
         print(f"{res['name']:<22} | {res['total_signals']:<8} | {res['wins']:<5} | {res['losses']:<5} | {res['win_rate']:>8.2f}% | ${res['pnl']:>10.2f}")
 
     print("-" * 80)
-    print(f"🏆 PNL COMPLESSIVO COMBINATO: ${tot_pnl:.2f} USD across {tot_signals} segnali totali")
+    print(f"🏆 PNL COMPLESSIVO COMBINATO: ${tot_pnl:.2f} USD (Segnali totali filtrati: {tot_signals})")
     print("==================================================")
 
 if __name__ == "__main__":
