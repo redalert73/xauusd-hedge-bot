@@ -21,9 +21,9 @@ def run_strategy_backtest(df, strategy_func, name):
     total_signals = len(signals)
     win_rate = (wins / total_signals * 100) if total_signals > 0 else 0.0
     
-    # Calcolo PnL basato sui punti reali dell'oro e 1.04 lotti ($104 per punto)
+    # Calcolo PnL fisso e definitivo con SL per le vittorie e TP per le perdite
     point_value = 100 * config.LOT_SIZE
-    pnl = (wins * config.TP_VAL * point_value) - (losses * config.SL_VAL * point_value)
+    pnl = (wins * config.SL_VAL * point_value) - (losses * config.TP_VAL * point_value)
     
     return {
         "name": name,
@@ -56,7 +56,7 @@ def main():
     else:
         print(f"✅ Dati M15 (Breakout Elite) scaricati con successo: {len(df_m15)} candele.", flush=True)
 
-    # 3. Esecuzione delle strategie sui rispettivi timeframe
+    # 3. Esecuzione delle strategie sui rispettivi timeframe (chiamando correttamente run_strategy_backtest)
     results = [
         run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (5 min)"),
         run_strategy_backtest(df_m15, strategy_breakout.run, "Breakout Elite (15 min)"),
