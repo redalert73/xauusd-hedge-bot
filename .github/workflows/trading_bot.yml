@@ -1,16 +1,14 @@
-name: XAUUSD Modular Trading Bot
+name: XAUUSD Daily Monitoring & Execution
 
 on:
   schedule:
-    # Esegue ogni 5 minuti, ma solo dalle 06:00 alle 20:59 UTC
-    # (Coincide perfettamente con la finestra operativa 06:00 - 20:30 UTC definita in config.py)
-    - cron: '*/5 6-20 * * *'
+    # Esegue ogni giorno alle 21:00 UTC (subito dopo la chiusura della sessione delle 20:30)
+    - cron: '0 21 * * *'
   
-  # Permette di avviare il bot manualmente in qualsiasi momento dalla scheda "Actions" su GitHub
+  # Consente comunque di avviarlo manualmente in qualsiasi momento
   workflow_dispatch:
 
 jobs:
-  run-trading-bot:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,8 +26,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests
 
-      - name: Esecuzione Trading Bot
+      - name: Esecuzione Backtest Dettagliato / Bot
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
-          python main.py
+          python backtest_detailed.py
