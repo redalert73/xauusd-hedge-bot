@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI - TARGET +1 SEGNALE
+# STRATEGIA FIBONACCI - TARATURA STRETTA (-1 SEGNALE)
 # ==========================================
 
 import pandas as pd
@@ -32,8 +32,8 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        # Tolleranza calibrata per aggiungere esattamente un'opportunità in più
-        if abs(c_close - fib_618) <= (diff * 0.0014):
+        # Tolleranza leggermente più restrittiva per ridurre di 1 unità i segnali
+        if abs(c_close - fib_618) <= (diff * 0.0011):
             if c_close < c_open:
                 signals.append((current_time, "BUY", c_close))
             elif c_close > c_open:
