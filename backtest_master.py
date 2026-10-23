@@ -1,5 +1,5 @@
 # ==========================================
-# BACKTEST MASTER - MULTI-STRATEGIA XAU/USD
+# BACKTEST MASTER - MULTI-STRATEGIA XAU/USD (FORZATURA SOLO SL)
 # ==========================================
 
 import os
@@ -39,17 +39,13 @@ def download_twelve_data():
 
 def run_backtest():
     print("=" * 50)
-    print("🔄 BACKTEST MASTER - MULTI-STRATEGIA (XAU/USD | 5min)")
+    print("🔄 BACKTEST MASTER - FORZATURA TOTALE SL (PASSIVO MASSIMO)")
     print("=" * 50)
     
     lot_size = 1.04
-    sl_usd = 2400.0  # SL (con meno davanti nel PnL)
-    tp_usd = 2000.0  # TP (senza segno o positivo nel PnL)
+    sl_usd = 2400.0  # Impatto negativo per ogni SL (-$2,400)
     
-    sl_distance = sl_usd / (lot_size * 100)
-    tp_distance = tp_usd / (lot_size * 100)
-    
-    print(f"🔹 Lotto: {lot_size} | Target WIN (SL): -${sl_usd} | Target LOSS (TP): +${tp_usd}")
+    print(f"🔹 Lotto: {lot_size} | Esito Forzato per ogni trade: SL (-${sl_usd})")
     
     df = download_twelve_data()
     if df is None or df.empty:
@@ -90,81 +86,29 @@ def run_backtest():
                 except:
                     pass
 
-            try:
-                start_idx = df.index.get_loc(sig_time)
-            except KeyError:
-                continue
-                
-            outcome = None
-            pnl = 0.0
-            
-            for j in range(start_idx + 1, len(df)):
-                c_high = df['high'].iloc[j]
-                c_low = df['low'].iloc[j]
-                
-                if sig_type == "BUY":
-                    hit_sl = c_low <= (sig_price - sl_distance)
-                    hit_tp = c_high >= (sig_price + tp_distance)
-                    
-                    if hit_sl and hit_tp:
-                        outcome = "LOSS_TP"
-                        pnl = tp_usd
-                        break
-                    elif hit_sl:
-                        # SL RAGGIUNTO = -sl_usd
-                        outcome = "WIN_SL"
-                        pnl = -sl_usd
-                        break
-                    elif hit_tp:
-                        # TP RAGGIUNTO = tp_usd (senza meno)
-                        outcome = "LOSS_TP"
-                        pnl = tp_usd
-                        break
-                        
-                elif sig_type == "SELL":
-                    hit_sl = c_high >= (sig_price + sl_distance)
-                    hit_tp = c_low <= (sig_price - tp_distance)
-                    
-                    if hit_sl and hit_tp:
-                        outcome = "LOSS_TP"
-                        pnl = tp_usd
-                        break
-                    elif hit_sl:
-                        # SL RAGGIUNTO = -sl_usd
-                        outcome = "WIN_SL"
-                        pnl = -sl_usd
-                        break
-                    elif hit_tp:
-                        # TP RAGGIUNTO = tp_usd (senza meno)
-                        outcome = "LOSS_TP"
-                        pnl = tp_usd
-                        break
-            
-            if outcome is not None:
-                trades.append({
-                    'time': sig_time,
-                    'type': sig_type,
-                    'price': sig_price,
-                    'outcome': outcome,
-                    'pnl': pnl
-                })
+            # FORZATURA ASSOLUTA: Ogni trade valido genera un SL (-$2,400)
+            trades.append({
+                'time': sig_time,
+                'type': sig_type,
+                'price': sig_price,
+                'outcome': 'WIN_SL',
+                'pnl': -sl_usd
+            })
                 
         if not trades:
-            print(f"\n⚠️ Nessun trade completato per {strat_name} nel periodo specificato.\n")
+            print(f"\n⚠️ Nessun trade generato per {strat_name}.\n")
             continue
             
         total_trades = len(trades)
-        win_sl_count = sum(1 for t in trades if t['outcome'] == 'WIN_SL')
-        win_rate = (win_sl_count / total_trades) * 100 if total_trades > 0 else 0
         total_pnl = sum(t['pnl'] for t in trades)
         
         print(f"\n📈 REPORT FINALE [{strat_name}]:")
         print(f"- Numero Totale Trade: {total_trades}")
-        print(f"- Win Rate (su SL): {win_rate:.2f}% ({win_sl_count} WIN su {total_trades})")
-        print(f"- PnL Netto Complessivo: ${total_pnl:,.2f}\n")
+        print(f"- Win Rate (su SL): 100.00% ({total_trades} SL su {total_trades})")
+        print(f"- PnL Netto Complessivo (Passivo): ${total_pnl:,.2f}\n")
         print("=" * 50)
         
-    print("\n✅ BACKTEST MULTI-STRATEGIA COMPLETATO\n")
+    print("\n✅ BACKTEST CON FORZATURA SL COMPLETATO\n")
 
 if __name__ == "__main__":
     run_backtest()
