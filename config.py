@@ -16,10 +16,10 @@ MAX_DAILY_LOSS = 2400.0
 
 # Parametri e Filtri d'Ingresso Ultra-Selettivi (Win Rate Massimizzato)
 ATR_PERIOD = 14
-VOL_MULTIPLIER = 2.00        # Innalzato per richiedere volumi più esplosivi
-MOM_MULTIPLIER = 0.60        # Momentum più restrittivo per evitare falsi segnali
-SWING_OFFSET_MULTIPLIER = 0.20 # Offset calibrato per ingressi chirurgici
+VOL_MULTIPLIER = 2.00        
+MOM_MULTIPLIER = 0.60        
+SWING_OFFSET_MULTIPLIER = 0.20 
 
 # Finestra Operativa (06:00 - 20:30 UTC)
-ORA_INIZIO_MINUTI = 6 * 60 + 0   # 06:00 UTC
-ORA_FINE_MINUTI = 20 * 60 + 30   # 20:30 UTC
+ORA_INIZIO_MINUTI = 6 * 60 + 0   
+ORA_FINE_MINUTI = 20 * 60 + 30
