@@ -50,8 +50,20 @@ def run_fibonacci_backtest():
             if "values" in res:
                 df = pd.DataFrame(res["values"])
                 df["datetime"] = pd.to_datetime(df["datetime"])
-                for col in ["open", "high", "low", "close", "volume"]:
-                    df[col] = df[col].astype(float)
+                
+                # Conversione sicura dei campi obbligatori di prezzo
+                for col in ["open", "high", "low", "close"]:
+                    if col in df.columns:
+                        df[col] = df[col].astype(float)
+                
+                # Gestione opzionale del volume: se presente lo converte, altrimenti salta senza forzare a 0
+                has_volume = "volume" in df.columns
+                if has_volume:
+                    try:
+                        df["volume"] = df["volume"].astype(float)
+                    except Exception:
+                        has_volume = False
+
                 df = df.sort_values("datetime").reset_index(drop=True)
                 df = identify_swings_and_fib(df)
 
@@ -99,4 +111,3 @@ def run_fibonacci_backtest():
 
 if __name__ == "__main__":
     run_fibonacci_backtest()
-  
