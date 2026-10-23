@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA VWAP - RIBILANCIATA
+# STRATEGIA VWAP - BILANCIAMENTO MIRATO
 # ==========================================
 
 import pandas as pd
@@ -7,7 +7,7 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 30:
+    if df is None or len(df) < 50:
         return signals
 
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -29,7 +29,7 @@ def run(df):
     cum_vol = df_temp.groupby('date')['vol'].cumsum()
     vwap = cum_tp_vol / cum_vol
 
-    for i in range(10, len(df)):
+    for i in range(25, len(df)):
         current_time = df.index[i]
         c_close = close.iloc[i]
         c_vwap = vwap.iloc[i]
@@ -39,11 +39,11 @@ def run(df):
             
         dist_pct = abs(c_close - c_vwap) / c_vwap
 
-        # Condizione moderata per ripristinare il flusso di segnali
-        if dist_pct >= 0.0005:
-            if c_close > c_vwap and close.iloc[i-1] > c_close:
+        # Richiediamo un eccesso marcato (0.35%) unito a una inversione pulita della candela precedente
+        if dist_pct >= 0.0035:
+            if c_close > c_vwap and close.iloc[i-1] > c_close and close.iloc[i-2] > close.iloc[i-1]:
                 signals.append((current_time, "BUY", c_close))
-            elif c_close < c_vwap and close.iloc[i-1] < c_close:
+            elif c_close < c_vwap and close.iloc[i-1] < c_close and close.iloc[i-2] < close.iloc[i-1]:
                 signals.append((current_time, "SELL", c_close))
 
     return signals
