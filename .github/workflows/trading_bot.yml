@@ -1,15 +1,17 @@
-name: XAUUSD Daily Performance Report
+name: XAUUSD Live Trading Bot
 
 on:
   schedule:
-    # Esegue ogni giorno alle 21:00 UTC (dopo la chiusura della sessione)
-    - cron: '0 21 * * *'
+    # Esegue ogni 5 minuti durante la finestra operativa (06:00 - 20:59 UTC)
+    - cron: '*/5 6-20 * * *'
   
   workflow_dispatch:
 
 jobs:
-  run-daily-report:
+  run-trading-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Permette al bot di committare il file bot_state.json
 
     steps:
       - name: Checkout repository
@@ -26,8 +28,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests
 
-      - name: Generazione Report Dettagliato
+      - name: Esecuzione Segnali Operativi
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
-          python backtest_detailed.py
+          python main.py
+
+      - name: Salva stato bot (Pausa / Reset)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add bot_state.json || true
+          git commit -m "Update bot state [skip ci]" || true
+          git push || true
