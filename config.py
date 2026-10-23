@@ -10,19 +10,17 @@ SYMBOL = "XAU/USD"
 TIMEFRAME = "15min"
 
 # Finestra temporale dinamica per il backtest storico
-# START_DATE: 365 giorni indietro rispetto a oggi (modificabile a piacere)
-# END_DATE: Data e ora correnti esatte al momento dell'esecuzione
 START_DATE = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
 END_DATE = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # Finestra operativa giornaliera (Sessione di Trading intraday M15)
-# Filtra i segnali per operare solo durante le ore di massima liquidità
 SESSION_START = "08:00"
 SESSION_END = "20:00"
 
-# Parametri di rischio e target in USD
-SL_VAL = 2400.0  # Target WIN principale (in USD)
-TP_VAL = 2000.0  # Livello di LOSS da evitare (in USD)
+# Parametri di rischio, target e punti
+SL_VAL = 2400.0          # Target WIN principale in USD ($2.400)
+TP_VAL = 2000.0          # Livello di LOSS da evitare in USD ($2.000)
+SL_POINTS = 23.08        # Punti di Stop Loss associati
 
 # Limiti di rischio e Circuit Breaker
 MAX_DAILY_LOSS = 3000.0  # Limite massimo giornaliero da non raggiungere
