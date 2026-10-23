@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA VWAP (M5) - TARGET 3+/GIORNO
+# STRATEGIA VWAP (M5) - ALTA PRECISIONE
 # ==========================================
 
 import pandas as pd
@@ -8,7 +8,7 @@ import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < 20:
+    if df is None or len(df) < 50:
         return signals
 
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -18,6 +18,9 @@ def run(df):
     high = df['high']
     low = df['low']
     volume = df['volume'] if 'volume' in df.columns else pd.Series(1, index=df.index)
+
+    # Filtro di trend primario: Media Mobile Esponenziale a 50 periodi
+    ema50 = close.ewm(span=50, adjust=False).mean()
 
     typical_price = (high + low + close) / 3
     df_temp = pd.DataFrame({
@@ -36,16 +39,17 @@ def run(df):
         prev_close = close.iloc[i-1]
         c_vwap = vwap.iloc[i]
         prev_vwap = vwap.iloc[i-1]
+        c_ema = ema50.iloc[i]
         
-        if pd.isna(c_vwap) or pd.isna(prev_vwap):
+        if pd.isna(c_vwap) or pd.isna(prev_vwap) or pd.isna(c_ema):
             continue
             
-        # Filtro di micro-distanza per eliminare solo il rumore piatto ma preservare 3+ segnali/giorno
-        dist = abs(c_close - c_vwap)
-        if dist >= (c_close * 0.0001):
-            if prev_close <= prev_vwap and c_close > c_vwap:
-                signals.append((current_time, "BUY", c_close))
-            elif prev_close >= prev_vwap and c_close < c_vwap:
-                signals.append((current_time, "SELL", c_close))
+        # LONG: Incrocio rialzista del VWAP SOLO se il prezzo è sopra l'EMA 50 (trend rialzista)
+        if prev_close <= prev_vwap and c_close > c_vwap and c_close > c_ema:
+            signals.append((current_time, "BUY", c_close))
+            
+        # SHORT: Incrocio ribassista del VWAP SOLO se il prezzo è sotto l'EMA 50 (trend ribassista)
+        elif prev_close >= prev_vwap and c_close < c_vwap and c_close < c_ema:
+            signals.append((current_time, "SELL", c_close))
 
     return signals
