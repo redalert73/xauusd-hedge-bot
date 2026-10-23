@@ -1,14 +1,14 @@
-name: XAUUSD Daily Monitoring & Execution
+name: XAUUSD Daily Performance Report
 
 on:
   schedule:
-    # Esegue ogni giorno alle 21:00 UTC (subito dopo la chiusura della sessione delle 20:30)
+    # Esegue ogni giorno alle 21:00 UTC (dopo la chiusura della sessione)
     - cron: '0 21 * * *'
   
-  # Consente comunque di avviarlo manualmente in qualsiasi momento
   workflow_dispatch:
 
 jobs:
+  run-daily-report:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests
 
-      - name: Esecuzione Backtest Dettagliato / Bot
+      - name: Generazione Report Dettagliato
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
