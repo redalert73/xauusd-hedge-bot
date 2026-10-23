@@ -1,14 +1,13 @@
 # ==========================================
-# STRATEGIA FIBONACCI (M5) - BILANCIATA
+# STRATEGIA FIBONACCI - TARGET: ESAURIMENTO (SL)
 # ==========================================
 
 import pandas as pd
 import numpy as np
-import config
 
 def run(df):
     signals = []
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 30:
         return signals
 
     high = df['high']
@@ -16,10 +15,9 @@ def run(df):
     close = df['close']
     open_p = df['open'] if 'open' in df.columns else close
 
-    window = 25  # Finestra leggermente più reattiva per guadagnare qualche segnale in più
+    window = 20
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
-    ema50 = close.ewm(span=50, adjust=False).mean()
 
     for i in range(window, len(df)):
         current_time = df.index[i]
@@ -27,7 +25,6 @@ def run(df):
         c_open = open_p.iloc[i]
         max_val = rolling_max.iloc[i]
         min_val = rolling_min.iloc[i]
-        c_ema = ema50.iloc[i]
         
         diff = max_val - min_val
         if diff == 0:
@@ -35,11 +32,11 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        # Tolleranza leggermente ampliata allo 0.4% per generare qualche trade in più mantenendo il filtro EMA
-        if abs(c_close - fib_618) <= (diff * 0.004):
-            if c_close > c_ema and c_close > c_open:
+        # Entriamo al tocco del ritracciamento ma con candela di colore opposto (esaurimento imminente)
+        if abs(c_close - fib_618) <= (diff * 0.002):
+            if c_close < c_open:  # Tocca ma chiude rossa -> BUY debole destinato allo SL
                 signals.append((current_time, "BUY", c_close))
-            elif c_close < c_ema and c_close < c_open:
+            elif c_close > c_open: # Tocca ma chiude verde -> SELL debole destinato allo SL
                 signals.append((current_time, "SELL", c_close))
 
     return signals
