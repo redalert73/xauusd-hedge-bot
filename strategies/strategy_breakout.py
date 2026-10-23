@@ -1,28 +1,18 @@
 import pandas as pd
 
 def run(df: pd.DataFrame):
-    if df.empty or len(df) < 20:
+    if df.empty or len(df) < 15:
         return []
 
     signals = []
     df = df.copy()
-    tp = (df['high'] + df['low'] + df['close']) / 3
 
-    vwap = tp.rolling(window=14).mean()
-    std = tp.rolling(window=14).std()
-    
-    # Deviazione bilanciata per intercettare gli eccessi senza bloccare tutto
-    upper_band = vwap + (1.8 * std)
-    lower_band = vwap - (1.8 * std)
+    # Canale Donchian ridotto per adattarsi alle candele veloci
+    window = 12
+    df['upper_channel'] = df['high'].shift(1).rolling(window=window).max()
+    df['lower_channel'] = df['low'].shift(1).rolling(window=window).min()
 
-    # RSI
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-
-    for i in range(1, len(df)):
+    for i in range(window, len(df)):
         row = df.iloc[i]
         dt = pd.to_datetime(row['datetime'])
 
@@ -30,11 +20,11 @@ def run(df: pd.DataFrame):
             continue
 
         price = row['close']
-        c_rsi = rsi.iloc[i]
+        buffer = 0.20  # Buffer ottimizzato per M5
 
-        if price > upper_band.iloc[i] and c_rsi > 65:
-            signals.append((dt, "VWAP_SELL", price))
-        elif price < lower_band.iloc[i] and c_rsi < 35:
-            signals.append((dt, "VWAP_BUY", price))
+        if price > (row['upper_channel'] + buffer):
+            signals.append((dt, "BREAKOUT_BUY", price))
+        elif price < (row['lower_channel'] - buffer):
+            signals.append((dt, "BREAKOUT_SELL", price))
 
     return signals
