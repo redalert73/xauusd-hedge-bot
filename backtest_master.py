@@ -1,117 +1,168 @@
 # ==========================================
-# SCRIPT BACKTEST MASTER - MULTI-STRATEGY
+# BACKTEST MASTER - MULTI-STRATEGIA XAU/USD
 # ==========================================
 
+import os
 import pandas as pd
-import numpy as np
-import config
-from data_loader import load_data
+import requests
+from datetime import datetime
 
+# Import delle strategie
 from strategies import strategy_breakout, strategy_vwap, strategy_fibonacci
 
+def download_twelve_data():
+    api_key = os.getenv("TWELVE_DATA_API_KEY")
+    if not api_key:
+        print("❌ ERRORE: TWELVE_DATA_API_KEY non trovata nelle variabili d'ambiente.")
+        return None
+    
+    print("✅ TWELVE_DATA_API_KEY rilevata. Scaricamento dati da Twelve Data per XAU/USD (5min)...")
+    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=5000&apikey={api_key}&timezone=UTC"
+    
+    response = requests.get(url)
+    data = response.json()
+    
+    if "values" not in data:
+        print(f"❌ Errore nel download dei dati: {data}")
+        return None
+        
+    df = pd.DataFrame(data["values"])
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df.set_index('datetime', inplace=True)
+    df.sort_index(inplace=True)
+    
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+    return df
+
 def run_backtest():
-    print("==================================================")
-    print(f"🔄 BACKTEST MASTER - MULTI-STRATEGIA ({config.SYMBOL} | {config.TIMEFRAME})")
-    print("==================================================")
-    print(f"🔹 Lotto: {config.LOT_SIZE} | Target WIN (SL): ${config.SL_VAL} | Target LOSS (TP): ${config.TP_VAL}")
-    print(f"🔹 Finestra Temporale Dinamica: da {config.START_DATE} a {config.END_DATE}")
-    print(f"🔹 Sessione Operativa: {config.SESSION_START} - {config.SESSION_END}")
-    print("--------------------------------------------------")
-
-    try:
-        df = load_data(
-            symbol=config.SYMBOL,
-            timeframe=config.TIMEFRAME,
-            start_date=config.START_DATE,
-            end_date=config.END_DATE
-        )
-    except Exception as e:
-        print(f"⚠️ Errore API dati: {e}. Attivazione simulazione dati storici...")
-        df = None
-
+    print("=" * 50)
+    print("🔄 BACKTEST MASTER - MULTI-STRATEGIA (XAU/USD | 5min)")
+    print("=" * 50)
+    
+    lot_size = 1.04
+    sl_usd = 2400.0
+    tp_usd = 2000.0
+    
+    # Conversione USD in punti di prezzo per XAU/USD (1 lotto = 100 oz -> 1.04 lotti = 104 oz)
+    sl_distance = sl_usd / (lot_size * 100)
+    tp_distance = tp_usd / (lot_size * 100)
+    
+    print(f"🔹 Lotto: {lot_size} | Target WIN (SL): ${sl_usd} | Target LOSS (TP): ${tp_usd}")
+    
+    df = download_twelve_data()
     if df is None or df.empty:
-        dates = pd.date_range(start=config.START_DATE, end=config.END_DATE, freq=config.TIMEFRAME)
-        np.random.seed(42)
-        prices = 2000 + np.cumsum(np.random.randn(len(dates)) * 2)
-        df = pd.DataFrame({
-            'open': prices,
-            'high': prices + 2,
-            'low': prices - 2,
-            'close': prices + np.random.randn(len(dates)),
-            'volume': np.random.randint(100, 1000, size=len(dates))
-        }, index=dates)
-
-    if isinstance(df.index, pd.DatetimeIndex):
-        df['time_str'] = df.index.strftime('%H:%M')
-        df = df[(df['time_str'] >= config.SESSION_START) & (df['time_str'] <= config.SESSION_END)]
-        df = df.drop(columns=['time_str'])
-
+        return
+        
+    # Filtro sessione operativa 08:00 - 20:00
+    df = df.between_time('08:00', '20:00')
+    
+    print(f"🔹 Finestra Temporale Dinamica: da {df.index[0]} a {df.index[-1]}")
+    print(f"🔹 Sessione Operativa: 08:00 - 20:00")
+    print("-" * 50)
+    
     strategies_registry = {
         "Breakout Elite": strategy_breakout,
         "VWAP Strategy": strategy_vwap,
         "Fibonacci Strategy": strategy_fibonacci
     }
-
+    
     for strat_name, strat_module in strategies_registry.items():
-        print(f"\n==================================================")
+        print("=" * 50)
         print(f"📊 ESECUZIONE STRATEGIA: {strat_name.upper()}")
-        print(f"==================================================")
+        print("=" * 50)
         
         signals = strat_module.run(df)
-        print(f"• Segnali totali generati: {len(signals)}")
-
+        print(f"- Segnali totali generati: {len(signals)}")
+        
         trades = []
-        daily_pnl = {}
         
-        # Fissiamo il seme casuale per ogni strategia per garantire la riproducibilità del Win Rate (~68.4%)
-        np.random.seed(101 if "Breakout" in strat_name else 42)
-
         for sig_time, sig_type, sig_price in signals:
-            day_str = sig_time.strftime('%Y-%m-%d')
-            
-            current_day_loss = daily_pnl.get(day_str, 0.0)
-            if current_day_loss <= -config.MAX_DAILY_LOSS:
+            # Filtro: escludiamo i segnali nell'ultima ora della sessione (dalle 19:00 in poi)
+            if hasattr(sig_time, 'hour') and sig_time.hour >= 19:
                 continue
+            elif isinstance(sig_time, str):
+                try:
+                    hour_int = int(sig_time.split()[1].split(':')[0])
+                    if hour_int >= 19:
+                        continue
+                except:
+                    pass
 
-            # Win Rate calibrato sul ~68.4% per il Breakout
-            win_prob = 0.316 if "Breakout" in strat_name else 0.35
-            is_win = np.random.rand() > win_prob
-            trade_pnl = config.SL_VAL if is_win else -config.TP_VAL
+            try:
+                start_idx = df.index.get_loc(sig_time)
+            except KeyError:
+                continue
+                
+            # Simulazione forward bar-by-bar
+            outcome = None
+            pnl = 0.0
             
-            trades.append({
-                'time': sig_time,
-                'type': sig_type,
-                'price': sig_price,
-                'result': 'WIN' if is_win else 'LOSS',
-                'pnl': trade_pnl
-            })
+            for j in range(start_idx + 1, len(df)):
+                c_high = df['high'].iloc[j]
+                c_low = df['low'].iloc[j]
+                
+                if sig_type == "BUY":
+                    hit_sl = c_low <= (sig_price - sl_distance)
+                    hit_tp = c_high >= (sig_price + tp_distance)
+                    
+                    if hit_sl and hit_tp:
+                        outcome = "LOSS"
+                        pnl = -sl_usd
+                        break
+                    elif hit_sl:
+                        outcome = "WIN_SL"
+                        pnl = -sl_usd
+                        break
+                    elif hit_tp:
+                        outcome = "LOSS_TP"
+                        pnl = tp_usd
+                        break
+                        
+                elif sig_type == "SELL":
+                    hit_sl = c_high >= (sig_price + sl_distance)
+                    hit_tp = c_low <= (sig_price - tp_distance)
+                    
+                    if hit_sl and hit_tp:
+                        outcome = "LOSS"
+                        pnl = -sl_usd
+                        break
+                    elif hit_sl:
+                        outcome = "WIN_SL"
+                        pnl = -sl_usd
+                        break
+                    elif hit_tp:
+                        outcome = "LOSS_TP"
+                        pnl = tp_usd
+                        break
             
-            daily_pnl[day_str] = daily_pnl.get(day_str, 0.0) + trade_pnl
-
-        trades_df = pd.DataFrame(trades)
+            if outcome is not None:
+                trades.append({
+                    'time': sig_time,
+                    'type': sig_type,
+                    'price': sig_price,
+                    'outcome': outcome,
+                    'pnl': pnl
+                })
+                
+        if not trades:
+            print(f"\n⚠️ Nessun trade completato per {strat_name} nel periodo specificato.\n")
+            continue
+            
+        total_trades = len(trades)
+        win_sl_count = sum(1 for t in trades if t['outcome'] == 'WIN_SL')
+        win_rate = (win_sl_count / total_trades) * 100 if total_trades > 0 else 0
+        total_pnl = sum(t['pnl'] for t in trades)
         
-        if not trades_df.empty:
-            total_net_pnl = trades_df['pnl'].sum()
-            win_count = len(trades_df[trades_df['result'] == 'WIN'])
-            total_count = len(trades_df)
-            win_rate = (win_count / total_count) * 100
-            
-            # Formattazione PnL con "-" per i netti positivi
-            if total_net_pnl > 0 and config.USE_MINUS_FOR_WINS:
-                formatted_pnl = f"-${abs(total_net_pnl):.2f}"
-            else:
-                formatted_pnl = f"${abs(total_net_pnl):.2f}"
-
-            print(f"📈 REPORT FINALE [{strat_name}]:")
-            print(f"• Numero Totale Trade: {total_count}")
-            print(f"• Win Rate: {win_rate:.2f}%")
-            print(f"• PnL Netto Complessivo: {formatted_pnl}")
-        else:
-            print(f"⚠️ Nessun trade completato per {strat_name} nel periodo specificato.")
-
-    print("\n==================================================")
-    print("✅ BACKTEST MULTI-STRATEGIA COMPLETATO")
-    print("==================================================")
+        print(f"\n📈 REPORT FINALE [{strat_name}]:")
+        print(f"- Numero Totale Trade: {total_trades}")
+        print(f"- Win Rate: {win_rate:.2f}%")
+        print(f"- PnL Netto Complessivo: ${total_pnl:,.2f}\n")
+        print("=" * 50)
+        
+    print("\n✅ BACKTEST MULTI-STRATEGIA COMPLETATO\n")
 
 if __name__ == "__main__":
     run_backtest()
