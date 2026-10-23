@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI RETRACEMENT (M5 / M15)
+# STRATEGIA FIBONACCI (M5) - ALTA SELETTIVITÀ
 # ==========================================
 
 import pandas as pd
@@ -7,9 +7,6 @@ import numpy as np
 import config
 
 def run(df):
-    """
-    Strategia Fibonacci Retracement basata sui dati storici e configurazione centrale.
-    """
     signals = []
     if df is None or len(df) < 50:
         return signals
@@ -18,12 +15,11 @@ def run(df):
     low = df['low']
     close = df['close']
 
-    window = 30
+    window = 40
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
 
     for i in range(window, len(df)):
-        # Utilizza direttamente l'indice datetime del DataFrame
         current_time = df.index[i]
         c_close = close.iloc[i]
         max_val = rolling_max.iloc[i]
@@ -35,10 +31,11 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        if abs(c_close - fib_618) < (diff * 0.01):
-            if c_close > close.iloc[i-1]:
+        # Tolleranza ridotta allo 0.3% e conferma di continuazione a 2 barre
+        if abs(c_close - fib_618) < (diff * 0.003):
+            if c_close > close.iloc[i-1] and close.iloc[i-1] > close.iloc[i-2]:
                 signals.append((current_time, "BUY", c_close))
-            else:
+            elif c_close < close.iloc[i-1] and close.iloc[i-1] < close.iloc[i-2]:
                 signals.append((current_time, "SELL", c_close))
 
     return signals
