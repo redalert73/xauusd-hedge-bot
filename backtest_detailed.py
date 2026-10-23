@@ -21,8 +21,7 @@ def run_strategy_backtest(df, strategy_func, name):
     total_signals = len(signals)
     win_rate = (wins / total_signals * 100) if total_signals > 0 else 0.0
     
-    # Calcolo PnL basato sui punti reali dell'oro e 1.04 lotti
-    # Con 1.04 lotti, 1 punto di movimento dell'oro = $104
+    # Calcolo PnL basato sui punti reali dell'oro e 1.04 lotti ($104 per punto)
     point_value = 100 * config.LOT_SIZE
     pnl = (wins * config.TP_VAL * point_value) - (losses * config.SL_VAL * point_value)
     
@@ -37,17 +36,17 @@ def run_strategy_backtest(df, strategy_func, name):
 
 def main():
     print("==================================================", flush=True)
-    print("🔬 BACKTEST MULTI-TIMEFRAME (BREAKOUT @ 15min)", flush=True)
+    print("🔬 BACKTEST MULTI-TIMEFRAME (VWAP/FIBO @ 5min | BREAKOUT @ 15min)", flush=True)
     print("==================================================", flush=True)
     print(f"⚙️ PARAMETRI: LOT_SIZE={config.LOT_SIZE} | SL={config.SL_VAL} | TP={config.TP_VAL} | MAX_DAILY_LOSS=${config.MAX_DAILY_LOSS}", flush=True)
     print("-" * 50, flush=True)
 
-    # 1. Caricamento Dati M5 (per VWAP e Fibonacci)
+    # 1. Caricamento Dati M5 (per le 2 strategie a 5 minuti: VWAP e Fibonacci)
     df_m5 = data_loader.fetch_market_data(interval="5min")
     if df_m5.empty:
         print("❌ ERRORE CRITICO: Impossibile scaricare i dati M5 da Twelve Data.", flush=True)
         sys.exit(1)
-    print(f"✅ Dati M5 scaricati con successo: {len(df_m5)} candele.", flush=True)
+    print(f"✅ Dati M5 (VWAP & Fibonacci) scaricati con successo: {len(df_m5)} candele.", flush=True)
 
     # 2. Caricamento Dati M15 (per Breakout Elite)
     df_m15 = data_loader.fetch_market_data(interval="15min")
@@ -55,20 +54,26 @@ def main():
         print("⚠️ Impossibile scaricare M15, eseguo fallback su M5 per Breakout.", flush=True)
         df_m15 = df_m5
     else:
-        print(f"✅ Dati M15 scaricati con successo: {len(df_m15)} candele.", flush=True)
+        print(f"✅ Dati M15 (Breakout Elite) scaricati con successo: {len(df_m15)} candele.", flush=True)
 
     # 3. Esecuzione delle strategie sui rispettivi timeframe
     results = [
-        run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (M5)"),
-        run_strategy_backtest(df_m15, strategy_breakout.run, "Breakout Elite (M15)"),
-        run_strategy_backtest(df_m5, strategy_fibonacci.run, "Fibonacci Golden Zone (M5)")
+        run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (5 min)"),
+        run_strategy_breakout(df_m15, strategy_breakout.run, "Breakout Elite (15 min)"),
+        run_strategy_fibonacci.run, ... # Gestito sotto
+    ]
+    # Sostituito con la chiamata corretta:
+    results = [
+        run_strategy_backtest(df_m5, strategy_vwap.run, "VWAP Contrarian (5 min)"),
+        run_strategy_breakout(df_m15, strategy_breakout.run, "Breakout Elite (15 min)"),
+        run_strategy_backtest(df_m5, strategy_fibonacci.run, "Fibonacci Golden Zone (5 min)")
     ]
 
     # 4. Tabella Sinottica Finale
     print("\n" + "=" * 80, flush=True)
     print("📊 RIEPILOGO GENERALE MULTI-TIMEFRAME", flush=True)
     print("=" * 80, flush=True)
-    print(f"{'STRATEGIA':<28} | {'SEGNALI':<8} | {'WIN':<5} | {'LOSS':<5} | {'WIN RATE':<10} | {'PNL STIMATO':<12}", flush=True)
+    print(f"{'STRATEGIA & TIMEFRAME':<30} | {'SEGNALI':<8} | {'WIN':<5} | {'LOSS':<5} | {'WIN RATE':<10} | {'PNL STIMATO':<12}", flush=True)
     print("-" * 80, flush=True)
 
     tot_signals = 0
@@ -77,7 +82,7 @@ def main():
     for res in results:
         tot_signals += res["total_signals"]
         tot_pnl += res["pnl"]
-        print(f"{res['name']:<28} | {res['total_signals']:<8} | {res['wins']:<5} | {res['losses']:<5} | {res['win_rate']:>8.2f}% | ${res['pnl']:>10.2f}", flush=True)
+        print(f"{res['name']:<30} | {res['total_signals']:<8} | {res['wins']:<5} | {res['losses']:<5} | {res['win_rate']:>8.2f}% | ${res['pnl']:>10.2f}", flush=True)
 
     print("-" * 80, flush=True)
     print(f"🏆 PNL COMPLESSIVO COMBINATO: ${tot_pnl:.2f} USD (Segnali totali: {tot_signals})", flush=True)
