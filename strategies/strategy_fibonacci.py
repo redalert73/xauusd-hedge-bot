@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA FIBONACCI - FREQUENZA INTRA-DAY (6-8 TOT/GIORNO)
+# STRATEGIA FIBONACCI - TARGET MAGGIORE ATTIVITÀ
 # ==========================================
 
 import pandas as pd
@@ -7,7 +7,7 @@ import numpy as np
 
 def run(df):
     signals = []
-    if df is None or len(df) < 25:
+    if df is None or len(df) < 20:
         return signals
 
     high = df['high']
@@ -15,7 +15,7 @@ def run(df):
     close = df['close']
     open_p = df['open'] if 'open' in df.columns else close
 
-    window = 15
+    window = 12
     rolling_max = high.rolling(window=window).max()
     rolling_min = low.rolling(window=window).min()
 
@@ -32,7 +32,7 @@ def run(df):
             
         fib_618 = max_val - (diff * 0.618)
         
-        if abs(c_close - fib_618) <= (diff * 0.0025):
+        if abs(c_close - fib_618) <= (diff * 0.0035):
             if c_close < c_open:
                 signals.append((current_time, "BUY", c_close))
             elif c_close > c_open:
