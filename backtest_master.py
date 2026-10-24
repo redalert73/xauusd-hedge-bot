@@ -76,5 +76,11 @@ def run_master():
             
     if master_summary:
         df_summary = pd.DataFrame(master_summary)
-        print("\n
-        
+        print("\n==================================================")
+        print("📋 RIEPILOGO COMPLESSIVO MASTER BACKTEST")
+        print("==================================================")
+        print(df_summary.to_string(index=False))
+        print("==================================================")
+
+if __name__ == "__main__":
+    run_master()
