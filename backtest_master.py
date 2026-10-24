@@ -1,6 +1,6 @@
 # ==========================================
 # BACKTEST MASTER - COORDINATORE GLOBALE
-# CON PARAMETRI DEFINITIVI
+# CON SOGLIA CRITICA DI SLIPPAGE
 # ==========================================
 
 import pandas as pd
@@ -41,8 +41,7 @@ def run_master():
     print("   - Lotto: 1.04")
     print("   - Stop Loss (SL): -$2,400.0 USD")
     print("   - Take Profit (TP): $2,000.0 USD")
-    print("   - Slippage: $2,900.0 USD")
-    print("   - Max Drawdown: Monitoraggio soglia critica")
+    print("   - Soglia Critica (Slippage): -$2,900.0 USD (Da non raggiungere mai)")
     print("==================================================")
     
     df = download_twelve_data()
@@ -65,13 +64,15 @@ def run_master():
         if df_trades is not None and not df_trades.empty:
             total_trades = len(df_trades)
             net_pnl = df_trades['cumulative_pnl'].iloc[-1]
-            max_dd = df_trades['cumulative_pnl'].min() # Semplificazione del massimo scostamento verso il basso
+            max_dd = df_trades['cumulative_pnl'].min()
+            breached = df_trades['threshold_breached'].any()
             
             master_summary.append({
                 'Strategy': strat_name,
                 'Total Trades': total_trades,
                 'Net PnL ($)': net_pnl,
-                'Max Drawdown ($)': max_dd
+                'Max Drawdown ($)': max_dd,
+                'Threshold Breached': breached
             })
             
     if master_summary:
