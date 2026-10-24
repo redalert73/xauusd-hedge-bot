@@ -52,7 +52,7 @@ def download_twelve_data():
     return df
 
 def run_production():
-    print("🔄 Esecuzione Production Runner (XAU/USD)...")
+    print("🔄 Esecuzione Production Runner (XAU/USD) con parametri definitivi...")
     df = download_twelve_data()
     if df is None or df.empty:
         return
@@ -70,8 +70,12 @@ def run_production():
         "Fibonacci Strategy": strategy_fibonacci
     }
     
+    # Parametri operativi definitivi
     lot_size = 1.04
-    sl_usd = -2400.0  # Impatto contabile rigoroso sull'SL
+    sl_usd = -2400.0
+    tp_usd = 2000.0
+    slippage_usd = 2900.0
+    # Max Drawdown: soglia critica monitorata da non raggiungere mai
     
     for strat_name, strat_module in strategies_registry.items():
         signals = strat_module.run(df)
@@ -89,7 +93,9 @@ def run_production():
                 f"🔹 Tipo: `{sig_type}`\n"
                 f"🔹 Prezzo: `{sig_price}`\n"
                 f"🔹 Lotto: `{lot_size}`\n"
-                f"🔹 Target Previsto (SL): `{sl_usd:,.2f} USD`\n"
+                f"🔹 Stop Loss: `{sl_usd:,.2f} USD`\n"
+                f"🔹 Take Profit: `{tp_usd:,.2f} USD`\n"
+                f"🔹 Slippage Imputato: `{slippage_usd:,.2f} USD`\n"
                 f"🔹 Timestamp: `{sig_time}`"
             )
             print(f"📢 Invio notifica per {strat_name}...")
