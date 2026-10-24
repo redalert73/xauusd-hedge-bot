@@ -1,0 +1,27 @@
+name: Backtest Detailed
+
+on:
+  workflow_dispatch: # Permette l'avvio manuale indipendente
+
+jobs:
+  run-detailed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas requests numpy
+
+      - name: Run Detailed Backtest
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: |
+          python -c "from backtest_detailed import run_detailed_backtest; from strategies import strategy_breakout; import pandas as pd; # test rapido o chiamata mirata"
+          
