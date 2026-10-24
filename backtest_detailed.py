@@ -1,6 +1,6 @@
 # ==========================================
 # BACKTEST DETAILED - ANALISI GRANULARE
-# CON PARAMETRI DEFINITIVI
+# CON SOGLIA CRITICA DI SLIPPAGE
 # ==========================================
 
 import pandas as pd
@@ -15,7 +15,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     lot_size = 1.04
     sl_usd = -2400.0
     tp_usd = 2000.0
-    slippage_usd = 2900.0
+    slippage_threshold = -2900.0  # Soglia critica di passivo da non raggiungere mai
     
     signals = strategy_module.run(df)
     if not signals:
@@ -26,22 +26,26 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     accumulated_pnl = 0.0
     peak_pnl = 0.0
     max_drawdown = 0.0
+    threshold_breached = False
     
     for idx, sig in enumerate(signals, 1):
         sig_time, sig_type, sig_price = sig
         
-        # Calcolo dell'esito del trade combinando i paletti stabiliti
-        # Ogni trade sconta l'impatto avverso dello SL corretto dallo slippage
-        trade_pnl = sl_usd - slippage_usd
+        # Ciascun trade genera l'esito di Stop Loss impostato
+        trade_pnl = sl_usd
         accumulated_pnl += trade_pnl
         
-        # Tracciamento dinamico del drawdown
+        # Tracciamento del drawdown e controllo della soglia critica (Slippage)
         if accumulated_pnl < peak_pnl:
             current_dd = accumulated_pnl - peak_pnl
             if current_dd < max_drawdown:
                 max_drawdown = current_dd
         else:
             peak_pnl = accumulated_pnl
+            
+        # Verifica se la soglia critica è stata violata
+        if accumulated_pnl <= slippage_threshold:
+            threshold_breached = True
             
         detailed_trades.append({
             'trade_id': idx,
@@ -50,38 +54,19 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
             'price': sig_price,
             'lot': lot_size,
             'pnl': trade_pnl,
-            'cumulative_pnl': accumulated_pnl
+            'cumulative_pnl': accumulated_pnl,
+            'threshold_breached': threshold_breached
         })
         
     df_trades = pd.DataFrame(detailed_trades)
     
     print(f"📈 REPORT DETTAGLIATO [{strategy_name}]:")
     print(f"- Totale Trade Eseguiti: {len(df_trades)}")
-    print(f"- Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f} | Slippage: ${slippage_usd:,.2f}")
+    print(f"- Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
+    print(f"- Soglia Critica (Slippage): ${slippage_threshold:,.2f}")
     print(f"- PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
     print(f"- Max Drawdown Raggiunto: ${max_drawdown:,.2f}")
+    print(f"- Soglia Critica Violata: {'⚠️ SI' : 'NO' if not threshold_breached else '⚠️ SI'}")
     print(f"==================================================")
     
     return df_trades
-
-# Esecuzione dettagliata per tutte le strategie
-def master_detailed_execution(df):
-    from strategies import strategy_breakout, strategy_vwap, strategy_fibonacci
-    
-    print("BACKTEST DETAILED MASTER - CONFIGURAZIONE DEFINITIVA")
-    print("==================================================")
-    
-    strategies = [
-        (strategy_breakout, "Breakout Elite"),
-        (strategy_vwap, "VWAP Strategy"),
-        (strategy_fibonacci, "Fibonacci Strategy")
-    ]
-    
-    all_reports = {}
-    for strat_mod, strat_name in strategies:
-        df_res = run_detailed_backtest(df, strat_mod, strat_name)
-        if df_res is not None:
-            all_reports[strat_name] = df_res
-            
-    print("\n✅ BACKTEST DETAILED COMPLETATO PER TUTTE LE STRATEGIE")
-    return all_reports
