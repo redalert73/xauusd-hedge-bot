@@ -1,29 +1,25 @@
 # ==========================================
-# BACKTEST MASTER - MULTI-STRATEGIA XAU/USD (FORZATURA SOLO SL)
+# BACKTEST MASTER - COORDINATORE GLOBALE
+# CON PARAMETRI DEFINITIVI
 # ==========================================
 
-import os
 import pandas as pd
 import requests
-from datetime import datetime
-
-# Import delle strategie
-from strategies import strategy_breakout, strategy_vwap, strategy_fibonacci
+from backtest_detailed import run_detailed_backtest
 
 def download_twelve_data():
+    import os
     api_key = os.getenv("TWELVE_DATA_API_KEY")
     if not api_key:
-        print("❌ ERRORE: TWELVE_DATA_API_KEY non trovata nelle variabili d'ambiente.")
+        print("❌ ERRORE: TWELVE_DATA_API_KEY non trovata.")
         return None
     
-    print("✅ TWELVE_DATA_API_KEY rilevata. Scaricamento dati da Twelve Data per XAU/USD (5min)...")
-    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=5000&apikey={api_key}&timezone=UTC"
-    
+    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=500&apikey={api_key}&timezone=UTC"
     response = requests.get(url)
     data = response.json()
     
     if "values" not in data:
-        print(f"❌ Errore nel download dei dati: {data}")
+        print("❌ ERRORE nel recupero dati da Twelve Data.")
         return None
         
     df = pd.DataFrame(data["values"])
@@ -37,78 +33,48 @@ def download_twelve_data():
             
     return df
 
-def run_backtest():
-    print("=" * 50)
-    print("🔄 BACKTEST MASTER - FORZATURA TOTALE SL (PASSIVO MASSIMO)")
-    print("=" * 50)
-    
-    lot_size = 1.04
-    sl_usd = 2400.0  # Impatto negativo per ogni SL (-$2,400)
-    
-    print(f"🔹 Lotto: {lot_size} | Esito Forzato per ogni trade: SL (-${sl_usd})")
+def run_master():
+    print("==================================================")
+    print("🚀 AVVIO BACKTEST MASTER - XAU/USD (5min)")
+    print("==================================================")
+    print("🔹 Parametri Operativi Bloccati:")
+    print("   - Lotto: 1.04")
+    print("   - Stop Loss (SL): -$2,400.0 USD")
+    print("   - Take Profit (TP): $2,000.0 USD")
+    print("   - Slippage: $2,900.0 USD")
+    print("   - Max Drawdown: Monitoraggio soglia critica")
+    print("==================================================")
     
     df = download_twelve_data()
     if df is None or df.empty:
+        print("❌ Impossibile procedere senza dati di mercato.")
         return
         
-    # Filtro sessione operativa 08:00 - 20:00 (escludendo l'ultima ora per dati troncati)
-    df = df.between_time('08:00', '20:00')
+    from strategies import strategy_breakout, strategy_vwap, strategy_fibonacci
     
-    print(f"🔹 Finestra Temporale Dinamica: da {df.index[0]} a {df.index[-1]}")
-    print(f"🔹 Sessione Operativa: 08:00 - 20:00 (Esclusa 19:00-20:00)")
-    print("-" * 50)
+    strategies = [
+        (strategy_breakout, "Breakout Elite"),
+        (strategy_vwap, "VWAP Strategy"),
+        (strategy_fibonacci, "Fibonacci Strategy")
+    ]
     
-    strategies_registry = {
-        "Breakout Elite": strategy_breakout,
-        "VWAP Strategy": strategy_vwap,
-        "Fibonacci Strategy": strategy_fibonacci
-    }
+    master_summary = []
     
-    for strat_name, strat_module in strategies_registry.items():
-        print("=" * 50)
-        print(f"📊 ESECUZIONE STRATEGIA: {strat_name.upper()}")
-        print("=" * 50)
-        
-        signals = strat_module.run(df)
-        print(f"- Segnali totali generati: {len(signals)}")
-        
-        trades = []
-        
-        for sig_time, sig_type, sig_price in signals:
-            # Filtro ultima ora (dalle 19:00 in poi)
-            if hasattr(sig_time, 'hour') and sig_time.hour >= 19:
-                continue
-            elif isinstance(sig_time, str):
-                try:
-                    hour_int = int(sig_time.split()[1].split(':')[0])
-                    if hour_int >= 19:
-                        continue
-                except:
-                    pass
-
-            # FORZATURA ASSOLUTA: Ogni trade valido genera un SL (-$2,400)
-            trades.append({
-                'time': sig_time,
-                'type': sig_type,
-                'price': sig_price,
-                'outcome': 'WIN_SL',
-                'pnl': -sl_usd
-            })
-                
-        if not trades:
-            print(f"\n⚠️ Nessun trade generato per {strat_name}.\n")
-            continue
+    for strat_mod, strat_name in strategies:
+        df_trades = run_detailed_backtest(df, strat_mod, strat_name)
+        if df_trades is not None and not df_trades.empty:
+            total_trades = len(df_trades)
+            net_pnl = df_trades['cumulative_pnl'].iloc[-1]
+            max_dd = df_trades['cumulative_pnl'].min() # Semplificazione del massimo scostamento verso il basso
             
-        total_trades = len(trades)
-        total_pnl = sum(t['pnl'] for t in trades)
+            master_summary.append({
+                'Strategy': strat_name,
+                'Total Trades': total_trades,
+                'Net PnL ($)': net_pnl,
+                'Max Drawdown ($)': max_dd
+            })
+            
+    if master_summary:
+        df_summary = pd.DataFrame(master_summary)
+        print("\n
         
-        print(f"\n📈 REPORT FINALE [{strat_name}]:")
-        print(f"- Numero Totale Trade: {total_trades}")
-        print(f"- Win Rate (su SL): 100.00% ({total_trades} SL su {total_trades})")
-        print(f"- PnL Netto Complessivo (Passivo): ${total_pnl:,.2f}\n")
-        print("=" * 50)
-        
-    print("\n✅ BACKTEST CON FORZATURA SL COMPLETATO\n")
-
-if __name__ == "__main__":
-    run_backtest()
