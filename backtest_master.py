@@ -66,7 +66,7 @@ def run_master():
             net_pnl = df_trades['cumulative_pnl'].iloc[-1]
             max_dd = df_trades['cumulative_pnl'].min()
             breached = df_trades['threshold_breached'].any()
-            print(f"- Soglia Critica Violata: {'⚠️ SI' : 'NO' if not threshold_breached else '⚠️ SI'}")
+            
             master_summary.append({
                 'Strategy': strat_name,
                 'Total Trades': total_trades,
