@@ -66,7 +66,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     print(f"- Soglia Critica (Slippage): ${slippage_threshold:,.2f}")
     print(f"- PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
     print(f"- Max Drawdown Raggiunto: ${max_drawdown:,.2f}")
-    print(f"- Soglia Critica Violata: {'⚠️ SI' : 'NO' if not threshold_breached else '⚠️ SI'}")
+    print(f"- Soglia Critica Violata: {'⚠️ SI' if threshold_breached else 'NO'}")
     print(f"==================================================")
     
     return df_trades
