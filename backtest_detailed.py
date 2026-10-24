@@ -1,15 +1,14 @@
 # ==========================================
-# BACKTEST DETAILED - ANALISI GRANULARE
-# CONTROLLO PER SINGOLO TRADE (SLIPPAGE LIMITE)
+# 🔵 [BACKTEST DETAILED] - ANALISI GRANULARE
 # ==========================================
 
 import pandas as pd
 import numpy as np
 
 def run_detailed_backtest(df, strategy_module, strategy_name):
-    print(f"\n==================================================")
-    print(f"📊 ESECUZIONE BACKTEST DETAILED: {strategy_name.upper()}")
-    print(f"==================================================")
+    print("\n" + "-"*50)
+    print(f"📊 [ACTION TYPE: BACKTEST DETAILED] -> Analisi: {strategy_name.upper()}")
+    print("-"*50)
     
     # Parametri definitivi bloccati
     lot_size = 1.04
@@ -19,7 +18,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     
     signals = strategy_module.run(df)
     if not signals:
-        print(f"- Nessun segnale generato per {strategy_name}.")
+        print(f"⚠️ [DETAILED] Nessun segnale generato per {strategy_name}.")
         return None
         
     detailed_trades = []
@@ -33,8 +32,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
         trade_pnl = sl_usd
         accumulated_pnl += trade_pnl
         
-        # Controllo sul SINGOLO TRADE: verifica se il singolo trade supera la soglia critica
-        # (Nel modello attuale il trade base è SL a -2400, ma se consideriamo l'impatto limite a -2900)
+        # Controllo sul SINGOLO TRADE rispetto al limite di slippage
         single_trade_breached = trade_pnl <= slippage_limit_per_trade
         if single_trade_breached:
             violating_trades_count += 1
@@ -52,12 +50,13 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
         
     df_trades = pd.DataFrame(detailed_trades)
     
-    print(f"📈 REPORT DETTAGLIATO [{strategy_name}]:")
-    print(f"- Totale Trade Eseguiti: {len(df_trades)}")
-    print(f"- Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
-    print(f"- Soglia Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
-    print(f"- Trade che violano il limite singolo: {violating_trades_count}")
-    print(f"- PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
-    print(f"==================================================")
+    print(f"📈 [DETAILED REPORT] {strategy_name}:")
+    print(f"   - Totale Trade Eseguiti: {len(df_trades)}")
+    print(f"   - Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
+    print(f"   - Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
+    print(f"   - Violazioni Limite Singolo: {violating_trades_count}")
+    print(f"   - PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
+    print("-"*50)
     
     return df_trades
+    
