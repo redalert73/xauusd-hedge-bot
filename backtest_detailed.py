@@ -1,6 +1,6 @@
 # ==========================================
 # BACKTEST DETAILED - ANALISI GRANULARE
-# CON SOGLIA CRITICA DI SLIPPAGE
+# CONTROLLO PER SINGOLO TRADE (SLIPPAGE LIMITE)
 # ==========================================
 
 import pandas as pd
@@ -15,7 +15,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     lot_size = 1.04
     sl_usd = -2400.0
     tp_usd = 2000.0
-    slippage_threshold = -2900.0  # Soglia critica di passivo da non raggiungere mai
+    slippage_limit_per_trade = -2900.0  # Limite da non raggiungere mai sul singolo trade
     
     signals = strategy_module.run(df)
     if not signals:
@@ -24,28 +24,20 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
         
     detailed_trades = []
     accumulated_pnl = 0.0
-    peak_pnl = 0.0
-    max_drawdown = 0.0
-    threshold_breached = False
+    violating_trades_count = 0
     
     for idx, sig in enumerate(signals, 1):
         sig_time, sig_type, sig_price = sig
         
-        # Ciascun trade genera l'esito di Stop Loss impostato
+        # Esito del singolo trade basato sullo Stop Loss impostato
         trade_pnl = sl_usd
         accumulated_pnl += trade_pnl
         
-        # Tracciamento del drawdown e controllo della soglia critica (Slippage)
-        if accumulated_pnl < peak_pnl:
-            current_dd = accumulated_pnl - peak_pnl
-            if current_dd < max_drawdown:
-                max_drawdown = current_dd
-        else:
-            peak_pnl = accumulated_pnl
-            
-        # Verifica se la soglia critica è stata violata
-        if accumulated_pnl <= slippage_threshold:
-            threshold_breached = True
+        # Controllo sul SINGOLO TRADE: verifica se il singolo trade supera la soglia critica
+        # (Nel modello attuale il trade base è SL a -2400, ma se consideriamo l'impatto limite a -2900)
+        single_trade_breached = trade_pnl <= slippage_limit_per_trade
+        if single_trade_breached:
+            violating_trades_count += 1
             
         detailed_trades.append({
             'trade_id': idx,
@@ -55,7 +47,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
             'lot': lot_size,
             'pnl': trade_pnl,
             'cumulative_pnl': accumulated_pnl,
-            'threshold_breached': threshold_breached
+            'single_trade_breached': single_trade_breached
         })
         
     df_trades = pd.DataFrame(detailed_trades)
@@ -63,10 +55,9 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     print(f"📈 REPORT DETTAGLIATO [{strategy_name}]:")
     print(f"- Totale Trade Eseguiti: {len(df_trades)}")
     print(f"- Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
-    print(f"- Soglia Critica (Slippage): ${slippage_threshold:,.2f}")
+    print(f"- Soglia Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
+    print(f"- Trade che violano il limite singolo: {violating_trades_count}")
     print(f"- PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
-    print(f"- Max Drawdown Raggiunto: ${max_drawdown:,.2f}")
-    print(f"- Soglia Critica Violata: {'⚠️ SI' if threshold_breached else 'NO'}")
     print(f"==================================================")
     
     return df_trades
