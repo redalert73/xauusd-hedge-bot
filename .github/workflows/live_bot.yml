@@ -1,4 +1,4 @@
-name: XAUUSD Live Trading Bot
+name: Live Trading Bot
 
 on:
   schedule:
