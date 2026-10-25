@@ -1,7 +1,7 @@
 name: Backtest Detailed
 
 on:
-  workflow_dispatch: # Permette l'avvio manuale indipendente
+  workflow_dispatch: # Permette l'avvio manuale indipendente dalla dashboard di GitHub
 
 jobs:
   run-detailed:
