@@ -1,4 +1,4 @@
-name: XAUUSD Daily Performance Report
+name: Daily Performance Report
 
 on:
   schedule:
