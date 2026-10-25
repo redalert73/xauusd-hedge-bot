@@ -3,8 +3,8 @@ import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Unified Volatility Exhaustion & Mean Reversion Stress Test.
-    Sfrutta le Bande di Bollinger estese per catturare i picchi di prezzo e forzare i test di Stop Loss.
+    Motore di Calcolo Dettagliato - Unified Volatility Stress Test + Chiusura Forzata ore 22:00.
+    Gestisce i trade aperti imponendo la chiusura prima del rollover serale.
     """
     trades = []
     pip_value_per_lot = 10.0  
@@ -20,6 +20,9 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
     df_candles['high'] = pd.to_numeric(df_candles['high'], errors='coerce')
     df_candles['low'] = pd.to_numeric(df_candles['low'], errors='coerce')
     df_candles['open'] = pd.to_numeric(df_candles['open'], errors='coerce')
+    
+    # Conversione della colonna temporale per il controllo dell'ora (22:00)
+    df_candles['dt'] = pd.to_datetime(df_candles['time'], errors='coerce')
 
     # Indicatori di Volatilità (Bande di Bollinger a 20 periodi, 2.2 Deviazioni Standard)
     window = 20
@@ -39,16 +42,13 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
             
             raw_sig = None
             
-            # Logica unificata basata sull'estensione estrema di volatilità
             if strategy_name == 'Breakout Elite':
-                # Estensione rialzista estrema -> ci posizioniamo long sui massimi per subire l'inversione
                 if curr_close > upper:
                     raw_sig = 'BUY'
                 elif curr_close < lower:
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'VWAP Strategy':
-                # Sfruttiamo la deviazione rispetto alla SMA centrale
                 sma_val = df_candles.loc[idx, 'sma']
                 if curr_close > sma_val + (df_candles.loc[idx, 'std'] * 1.5):
                     raw_sig = 'BUY'
@@ -56,7 +56,6 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'Fibonacci Strategy':
-                # Estrazione basata sui range dinamici delle ultime 5 candele
                 recent_high = df_candles.loc[idx-5:idx-1, 'high'].max()
                 recent_low = df_candles.loc[idx-5:idx-1, 'low'].min()
                 fib_zone = recent_low + (recent_high - recent_low) * 0.786
@@ -74,6 +73,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
         if trade_type in ['BUY', 'SELL']:
             entry_price = row['close']
             entry_time = row['time']
+            entry_dt = row['dt']
             
             if trade_type == 'BUY':
                 target_sl = entry_price - price_sl_delta
@@ -90,7 +90,22 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
                 future_candle = df_candles.iloc[j]
                 high = future_candle['high']
                 low = future_candle['low']
+                close_price = future_candle['close']
+                future_dt = future_candle['dt']
                 
+                # 🛑 Regola Chiusura Forzata: se arriviamo alle ore 22:00 o oltre nella stessa data
+                is_same_day = (pd.notna(entry_dt) and pd.notna(future_dt) and entry_dt.date() == future_dt.date())
+                is_cutoff_time = (pd.notna(future_dt) and future_dt.hour >= 22)
+                
+                if is_same_day and is_cutoff_time:
+                    trade_result = 'TIMEOUT_22'
+                    # Calcolo PnL basato sulla differenza di prezzo alla chiusura forzata
+                    if trade_type == 'BUY':
+                        pnl = (close_price - entry_price) * lot_size * pip_value_per_lot
+                    else:
+                        pnl = (entry_price - close_price) * lot_size * pip_value_per_lot
+                    break
+
                 if trade_type == 'BUY':
                     hit_sl = (low <= target_sl)
                     hit_tp = (high >= target_tp)
@@ -98,7 +113,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
                     hit_sl = (high >= target_sl)
                     hit_tp = (low <= target_tp)
                 
-                # Priorità assoluta SL in caso di doppio tocco nella stessa candela
+                # Priorità assoluta SL in caso di doppio tocco
                 if hit_sl:
                     trade_result = 'SL'
                     pnl = -sl_usd
@@ -120,14 +135,14 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.
                 'type': trade_type,
                 'price': entry_price,
                 'result': trade_result,
-                'pnl ($)': pnl,
+                'pnl ($)': round(pnl, 2),
                 'single_trade_breached': single_breached
             })
             
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (UNIFIED VOLATILITY STRESS TEST) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (CUTOFF ORE 22) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
