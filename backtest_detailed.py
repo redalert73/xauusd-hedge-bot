@@ -3,8 +3,8 @@ import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Modalità Breakout Standard (Target SL).
-    I segnali seguono la rottura per testare la cattura nei fakeout e massimizzare i test di Stop Loss.
+    Motore di Calcolo Dettagliato - Breakout Standard con Priorità Intra-Candela Rigorosa su SL.
+    In caso di doppio tocco (SL e TP nella stessa candela), prevale sempre lo Stop Loss.
     """
     trades = []
     pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
@@ -41,7 +41,6 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             is_bearish_stack = (e20 < e30) and (e30 < e100)
             
             if strategy_name == 'Breakout Elite':
-                # Segnale diretto nella direzione del breakout (senza inversione)
                 if curr_close > prev_high and not is_bullish_stack:
                     raw_sig = 'BUY' 
                 elif curr_close < prev_low and not is_bearish_stack:
@@ -60,7 +59,6 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                 elif curr_close <= mid_point:
                     raw_sig = 'SELL'
 
-            # Assegnazione diretta del segnale (Breakout Standard)
             df_candles.loc[idx, 'signal'] = raw_sig
 
     for i in range(len(df_candles)):
@@ -87,28 +85,25 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                 high = future_candle['high']
                 low = future_candle['low']
                 
+                # Verifica condizioni di attivazione per SL e TP nella stessa candela
                 if trade_type == 'BUY':
-                    if low <= target_sl:
-                        trade_result = 'SL'
-                        pnl = -sl_usd
-                        if sl_usd >= slippage_limit:
-                            single_breached = True
-                        break
-                    elif high >= target_tp:
-                        trade_result = 'TP'
-                        pnl = tp_usd
-                        break
-                elif trade_type == 'SELL':
-                    if high >= target_sl:
-                        trade_result = 'SL'
-                        pnl = -sl_usd
-                        if sl_usd >= slippage_limit:
-                            single_breached = True
-                        break
-                    elif low <= target_tp:
-                        trade_result = 'TP'
-                        pnl = tp_usd
-                        break
+                    hit_sl = (low <= target_sl)
+                    hit_tp = (high >= target_tp)
+                else: # SELL
+                    hit_sl = (high >= target_sl)
+                    hit_tp = (low <= target_tp)
+                
+                # 🛑 PRIORITÀ INTRA-CANDELA RIGOROSA: Se tocca entrambi, vince sempre lo SL
+                if hit_sl:
+                    trade_result = 'SL'
+                    pnl = -sl_usd
+                    if sl_usd >= slippage_limit:
+                        single_breached = True
+                    break
+                elif hit_tp:
+                    trade_result = 'TP'
+                    pnl = tp_usd
+                    break
             
             if trade_result is None:
                 trade_result = 'OPEN'
@@ -127,7 +122,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (TARGET SL STRESS) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (STRICT SL PRIORITY) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
