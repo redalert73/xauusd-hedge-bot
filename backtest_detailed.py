@@ -3,12 +3,11 @@ import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Pure Anti-Breakout (Fade the Breakout) + Strict SL Priority.
-    I segnali vengono invertiti alla fonte per forzare l'ingresso contro il movimento iniziale,
-    massimizzando l'impatto distruttivo dello Stop Loss.
+    Motore di Calcolo Dettagliato - Raw Breakout (Senza filtri EMA) + Strict SL Priority.
+    Rimuove i filtri di tendenza per catturare tutti i falsi breakout e massimizzare i test di Stop Loss.
     """
     trades = []
-    pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
+    pip_value_per_lot = 10.0  
     
     price_sl_delta = sl_usd / (lot_size * pip_value_per_lot)
     price_tp_delta = tp_usd / (lot_size * pip_value_per_lot)
@@ -17,28 +16,20 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
         return pd.DataFrame()
 
     df_candles = df_candles.copy()
-
-    # --- CALCOLO EMA 20, 30, 100 ---
     df_candles['close'] = pd.to_numeric(df_candles['close'], errors='coerce')
-    df_candles['ema_20'] = df_candles['close'].ewm(span=20, adjust=False).mean()
-    df_candles['ema_30'] = df_candles['close'].ewm(span=30, adjust=False).mean()
-    df_candles['ema_100'] = df_candles['close'].ewm(span=100, adjust=False).mean()
 
     if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
         df_candles['signal'] = None
         
-        for idx in range(100, len(df_candles)):
+        for idx in range(50, len(df_candles)):
             prev_high = df_candles.loc[idx - 1, 'high']
             prev_low = df_candles.loc[idx - 1, 'low']
             curr_close = df_candles.loc[idx, 'close']
-            
-            e20 = df_candles.loc[idx, 'ema_20']
-            e30 = df_candles.loc[idx, 'ema_30']
-            e100 = df_candles.loc[idx, 'ema_100']
+            curr_open = df_candles.loc[idx, 'open']
             
             raw_sig = None
             
-            # Generazione del segnale base di breakout
+            # 🚀 BREAKOUT GREZZO (Senza filtri EMA per catturare i fakeout)
             if strategy_name == 'Breakout Elite':
                 if curr_close > prev_high:
                     raw_sig = 'BUY'
@@ -46,9 +37,10 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'VWAP Strategy':
-                if curr_close > e20:
+                # Sostituito con deviazione di prezzo pura rispetto all'apertura
+                if curr_close > curr_open + (curr_open * 0.001):
                     raw_sig = 'BUY'
-                elif curr_close < e20:
+                elif curr_close < curr_open - (curr_open * 0.001):
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'Fibonacci Strategy':
@@ -58,11 +50,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                 elif curr_close <= mid_point:
                     raw_sig = 'SELL'
 
-            # 🔄 INVERSIONE ANTI-BREAKOUT (Entriamo contro il movimento per cercare lo SL)
-            if raw_sig == 'BUY':
-                df_candles.loc[idx, 'signal'] = 'SELL'
-            elif raw_sig == 'SELL':
-                df_candles.loc[idx, 'signal'] = 'BUY'
+            df_candles.loc[idx, 'signal'] = raw_sig
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -75,7 +63,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             if trade_type == 'BUY':
                 target_sl = entry_price - price_sl_delta
                 target_tp = entry_price + price_tp_delta
-            else: # SELL
+            else:
                 target_sl = entry_price + price_sl_delta
                 target_tp = entry_price - price_tp_delta
                 
@@ -91,7 +79,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                 if trade_type == 'BUY':
                     hit_sl = (low <= target_sl)
                     hit_tp = (high >= target_tp)
-                else: # SELL
+                else:
                     hit_sl = (high >= target_sl)
                     hit_tp = (low <= target_tp)
                 
@@ -124,7 +112,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (PURE ANTI-BREAKOUT) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (RAW BREAKOUT) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
