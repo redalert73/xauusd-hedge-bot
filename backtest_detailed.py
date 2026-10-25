@@ -1,9 +1,9 @@
 import pandas as pd
+import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Modalità Stress-Test Avverso (Priorità Assoluta SL).
-    Generazione segnali ultra-rapida (finestra = 1) per innescare i trade il prima possibile.
+    Motore di Calcolo Dettagliato - Modalità Anti-Breakout con Filtro EMA Multiple (20, 30, 100).
     """
     trades = []
     pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
@@ -16,41 +16,64 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
 
     df_candles = df_candles.copy()
 
-    # Generazione segnali ultra-rapida (finestra = 1 per attivazione immediata)
+    # --- CALCOLO EMA 20, 30, 100 ---
+    df_candles['close'] = pd.to_numeric(df_candles['close'], errors='coerce')
+    df_candles['ema_20'] = df_candles['close'].ewm(span=20, adjust=False).mean()
+    df_candles['ema_30'] = df_candles['close'].ewm(span=30, adjust=False).mean()
+    df_candles['ema_100'] = df_candles['close'].ewm(span=100, adjust=False).mean()
+
     if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
         df_candles['signal'] = None
         
-        # Dalla seconda candela in poi, confronta subito con la precedente
-        for idx in range(1, len(df_candles)):
+        # Partiamo da almeno 100 periodi per avere l'EMA 100 stabile
+        for idx in range(100, len(df_candles)):
             prev_high = df_candles.loc[idx - 1, 'high']
             prev_low = df_candles.loc[idx - 1, 'low']
             curr_close = df_candles.loc[idx, 'close']
+            curr_open = df_candles.loc[idx, 'open']
+            
+            e20 = df_candles.loc[idx, 'ema_20']
+            e30 = df_candles.loc[idx, 'ema_30']
+            e100 = df_candles.loc[idx, 'ema_100']
+            
+            raw_sig = None
+            
+            # Condizione di trend macro (es. EMA stack rialzista o ribassista)
+            is_bullish_stack = (e20 > e30) and (e30 > e100)
+            is_bearish_stack = (e20 < e30) and (e30 < e100)
             
             if strategy_name == 'Breakout Elite':
-                if curr_close > prev_high:
-                    df_candles.loc[idx, 'signal'] = 'BUY'
-                elif curr_close < prev_low:
-                    df_candles.loc[idx, 'signal'] = 'SELL'
+                # Se rompe il massimo ma siamo in stack rialzista estremo (possibile esaurimento / fakeout)
+                if curr_close > prev_high and is_bullish_stack:
+                    raw_sig = 'BUY' # Sarà invertito in SELL
+                elif curr_close < prev_low and is_bearish_stack:
+                    raw_sig = 'SELL' # Sarà invertito in BUY
+                    
             elif strategy_name == 'VWAP Strategy':
-                # Esempio reattivo immediato basato su soglia rapida
-                curr_open = df_candles.loc[idx, 'open']
-                if curr_close > curr_open:
-                    df_candles.loc[idx, 'signal'] = 'BUY'
-                else:
-                    df_candles.loc[idx, 'signal'] = 'SELL'
+                # Sfruttiamo il posizionamento rispetto all'EMA 20 e 30
+                if curr_close > e20 and curr_close < curr_open:
+                    raw_sig = 'BUY'
+                elif curr_close < e20 and curr_close > curr_open:
+                    raw_sig = 'SELL'
+                    
             elif strategy_name == 'Fibonacci Strategy':
-                # Trigger immediato basato sul range precedente
                 mid_point = (prev_high + prev_low) / 2
-                if curr_close > mid_point:
-                    df_candles.loc[idx, 'signal'] = 'BUY'
-                else:
-                    df_candles.loc[idx, 'signal'] = 'SELL'
+                if curr_close > mid_point and curr_close > e100:
+                    raw_sig = 'BUY'
+                elif curr_close <= mid_point and curr_close < e100:
+                    raw_sig = 'SELL'
+
+            # 🔄 INVERSIONE ANTI-BREAKOUT APPLICATA ALLA FONTE
+            if raw_sig == 'BUY':
+                df_candles.loc[idx, 'signal'] = 'SELL'
+            elif raw_sig == 'SELL':
+                df_candles.loc[idx, 'signal'] = 'BUY'
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
+        trade_type = row.get('signal')
         
-        if row.get('signal') in ['BUY', 'SELL']:
-            trade_type = row['signal']
+        if trade_type in ['BUY', 'SELL']:
             entry_price = row['close']
             entry_time = row['time']
             
@@ -65,7 +88,6 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             pnl = 0.0
             single_breached = False
             
-            # Scorrimento con priorità assoluta e inderogabile sullo Stop Loss
             for j in range(i + 1, len(df_candles)):
                 future_candle = df_candles.iloc[j]
                 high = future_candle['high']
@@ -110,9 +132,8 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             
     df_results = pd.DataFrame(trades)
     
-    # Stampa i singoli trade solo se verbose è True
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE SINGOLI TRADE (STRESS SL) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (EMA 20/30/100 FILTER) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
