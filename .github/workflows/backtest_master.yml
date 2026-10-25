@@ -1,9 +1,9 @@
 name: Backtest Master
 
 on:
-  workflow_dispatch: # Permette l'avvio manuale
+  workflow_dispatch: # Permette l'avvio manuale dalla dashboard
   schedule:
-    - cron: '0 0 * * *' # Eventuale schedulazione giornaliera
+    - cron: '0 0 * * *' # Esecuzione giornaliera automatica (opzionale)
 
 jobs:
   run-master:
