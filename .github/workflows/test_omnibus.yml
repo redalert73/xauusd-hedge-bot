@@ -23,7 +23,7 @@ jobs:
           pip install pandas numpy requests
 
       - name: Run Omnibus Adaptive Backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -c "import backtest_omnibus_adaptive as om; import pandas as pd; print('Avvio test Omnibus...');"
-          # Sostituisci la riga sottostante con la chiamata effettiva presente nel tuo backtest_master per questo modulo
           python backtest_master.py --strategy omnibus
