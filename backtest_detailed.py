@@ -1,177 +1,86 @@
-# ==========================================
-# 🔵 [BACKTEST DETAILED] - STRESS TEST SL & REPORT GRANULARE
-# ==========================================
-
 import pandas as pd
-import numpy as np
-import requests
-import os
 
-def download_twelve_data():
-    api_key = os.getenv("TWELVE_DATA_API_KEY")
-    if not api_key:
-        print("❌ [DETAILED] ERRORE: TWELVE_DATA_API_KEY non trovata.")
-        return None
+def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0):
+    """
+    Simulazione Backtest Dettagliata - Modalità Stress-Test Avverso (Priorità SL).
+    I trade rimangono aperti finché non colpiscono il TP o lo SL sui picchi della candela.
+    """
+    trades = []
+    pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
     
-    url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=500&apikey={api_key}&timezone=UTC"
-    response = requests.get(url)
-    data = response.json()
+    # Calcolo delta prezzo in base ai valori in USD bloccati
+    price_sl_delta = sl_usd / (lot_size * pip_value_per_lot)
+    price_tp_delta = tp_usd / (lot_size * pip_value_per_lot)
     
-    if "values" not in data:
-        print("❌ [DETAILED] ERRORE nel recupero dati da Twelve Data.")
-        return None
-        
-    df = pd.DataFrame(data["values"])
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    df.set_index('datetime', inplace=True)
-    df.sort_index(inplace=True)
-    
-    for col in ['open', 'high', 'low', 'close', 'volume']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-    return df
-
-def run_detailed_backtest(df, strategy_module, strategy_name):
-    print("\n" + "="*60)
+    print(f"\n============================================================")
     print(f"📊 [ACTION TYPE: BACKTEST DETAILED] -> Analisi: {strategy_name.upper()}")
-    print("="*60)
-    
-    # Parametri definitivi bloccati (Slippage limit aggiornato a -$2,800.0)
-    lot_size = 1.04
-    sl_usd = -2400.0
-    tp_usd = 2000.0
-    slippage_limit_per_trade = -2800.0  # Limite restrittivo da non raggiungere mai sul singolo trade
-    
-    # Calcolo della conversione di prezzo per XAU/USD (1 lotto = 100 oz)
-    dollar_per_point = lot_size * 100
-    tp_distance = tp_usd / dollar_per_point
-    sl_distance = abs(sl_usd) / dollar_per_point
-    
-    signals = strategy_module.run(df)
-    if not signals:
-        print(f"⚠️ [DETAILED] Nessun segnale generato per {strategy_name}.")
-        return None
+    print(f"============================================================")
+
+    for i in range(len(df_candles)):
+        row = df_candles.iloc[i]
         
-    detailed_trades = []
-    accumulated_pnl = 0.0
-    violating_trades_count = 0
-    wins_count = 0
-    losses_count = 0
-    
-    df_prices = df.copy()
-    
-    for idx, sig in enumerate(signals, 1):
-        sig_time, sig_type, sig_price = sig
-        
-        try:
-            start_loc = df_prices.index.get_loc(sig_time)
-        except KeyError:
-            continue
+        # Condizione di ingresso (Esempio basato su segnale generato dalla strategia)
+        if row.get('signal') in ['BUY', 'SELL']:
+            trade_type = row['signal']
+            entry_price = row['close']
+            entry_time = row['time']
             
-        if sig_type.upper() == 'BUY':
-            target_tp = sig_price + tp_distance
-            target_sl = sig_price - sl_distance
-        else:
-            target_tp = sig_price - tp_distance
-            target_sl = sig_price + sl_distance
-            
-        trade_pnl = 0.0
-        trade_result = "OPEN"
-        
-        # Scansione in modalità stress-test: privilegia il raggiungimento dello SL
-        for future_idx in range(start_loc + 1, len(df_prices)):
-            row = df_prices.iloc[future_idx]
-            h = row['high']
-            l = row['low']
-            
-            if sig_type.upper() == 'BUY':
-                hit_tp = h >= target_tp
-                hit_sl = l <= target_sl
+            if trade_type == 'BUY':
+                target_sl = entry_price - price_sl_delta
+                target_tp = entry_price + price_tp_delta
+            else: # SELL
+                target_sl = entry_price + price_sl_delta
+                target_tp = entry_price - price_tp_delta
                 
-                if hit_sl:
-                    trade_pnl = sl_usd
-                    losses_count += 1
-                    trade_result = "LOSS (SL - Stress)"
-                    break
-                elif hit_tp:
-                    trade_pnl = tp_usd
-                    wins_count += 1
-                    trade_result = "WIN (TP)"
-                    break
-            else:  # SELL
-                hit_tp = l <= target_tp
-                hit_sl = h >= target_sl
-                
-                if hit_sl:
-                    trade_pnl = sl_usd
-                    losses_count += 1
-                    trade_result = "LOSS (SL - Stress)"
-                    break
-                elif hit_tp:
-                    trade_pnl = tp_usd
-                    wins_count += 1
-                    trade_result = "WIN (TP)"
-                    break
-        else:
-            trade_pnl = 0.0
-            trade_result = "EXPIRED"
-
-        accumulated_pnl += trade_pnl
-        
-        single_trade_breached = trade_pnl <= slippage_limit_per_trade
-        if single_trade_breached:
-            violating_trades_count += 1
+            trade_result = None
+            pnl = 0.0
+            single_breached = False
             
-        detailed_trades.append({
-            'trade_id': idx,
-            'time': sig_time,
-            'type': sig_type.upper(),
-            'price': round(sig_price, 2),
-            'result': trade_result,
-            'pnl ($)': trade_pnl,
-            'cumulative_pnl ($)': accumulated_pnl,
-            'single_trade_breached': single_trade_breached
-        })
-        
-    df_trades = pd.DataFrame(detailed_trades)
-    
-    # Stampa dell'elenco puntuale di ogni singolo trade
-    print("\n📋 ELENCO PUNTUALE SINGOLI TRADE (STRESS SL):")
-    print(df_trades.to_string(index=False))
-    print("-" * 60)
-    
-    # Stampa del report riepilogativo
-    print(f"📈 [DETAILED REPORT SUMMARY] -> {strategy_name.upper()}:")
-    print(f"   - Totale Trade Eseguiti: {len(df_trades)}")
-    print(f"   - 🎯 Totale Trade in Take Profit (TP): {wins_count}")
-    print(f"   - ❌ Totale Trade in Stop Loss (SL - Stress): {losses_count}")
-    print(f"   - Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
-    print(f"   - Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
-    print(f"   - Violazioni Limite Singolo: {violating_trades_count}")
-    print(f"   - PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
-    print("="*60)
-    
-    return df_trades
+            # Scorrimento candele successive per esito TP/SL (Ignora EXPIRED)
+            for j in range(i + 1, len(df_candles)):
+                future_candle = df_candles.iloc[j]
+                high = future_candle['high']
+                low = future_candle['low']
+                
+                if trade_type == 'BUY':
+                    # Stress-test avverso: Priorità al controllo del minimo (SL)
+                    if low <= target_sl:
+                        trade_result = 'SL'
+                        pnl = -sl_usd
+                        if sl_usd >= slippage_limit:
+                            single_breached = True
+                        break
+                    elif high >= target_tp:
+                        trade_result = 'TP'
+                        pnl = tp_usd
+                        break
+                elif trade_type == 'SELL':
+                    # Stress-test avverso: Priorità al controllo del massimo (SL)
+                    if high >= target_sl:
+                        trade_result = 'SL'
+                        pnl = -sl_usd
+                        if sl_usd >= slippage_limit:
+                            single_breached = True
+                        break
+                    elif low <= target_tp:
+                        trade_result = 'TP'
+                        pnl = tp_usd
+                        break
+            
+            # Se la serie storica finisce senza toccare TP o SL
+            if trade_result is None:
+                trade_result = 'OPEN'
+                pnl = 0.0
 
-def run_standalone():
-    print("="*60)
-    print("🚀 [ACTION TYPE: BACKTEST DETAILED] - ESECUZIONE AUTONOMA")
-    print("="*60)
-    df = download_twelve_data()
-    if df is None or df.empty:
-        print("❌ [DETAILED] Impossibile procedere senza dati di mercato.")
-        return
-        
-    from strategies import strategy_breakout, strategy_vwap, strategy_fibonacci
-    strategies = [
-        (strategy_breakout, "Breakout Elite"),
-        (strategy_vwap, "VWAP Strategy"),
-        (strategy_fibonacci, "Fibonacci Strategy")
-    ]
-    
-    for strat_mod, strat_name in strategies:
-        run_detailed_backtest(df, strat_mod, strat_name)
-
-if __name__ == "__main__":
-    run_standalone()
+            trades.append({
+                'trade_id': len(trades) + 1,
+                'time': entry_time,
+                'type': trade_type,
+                'price': entry_price,
+                'result': trade_result,
+                'pnl ($)': pnl,
+                'single_trade_breached': single_breached
+            })
+            
+    df_results = pd.DataFrame(trades)
+    return df_results
