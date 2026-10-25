@@ -3,8 +3,8 @@ import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Raw Breakout (Senza filtri EMA) + Strict SL Priority.
-    Rimuove i filtri di tendenza per catturare tutti i falsi breakout e massimizzare i test di Stop Loss.
+    Motore di Calcolo Dettagliato - Pure Raw Fade (Inversione Totale del Breakout Grezzo) + Strict SL Priority.
+    Inverte i segnali di breakout per scommettere contro la rottura, massimizzando l'impatto degli Stop Loss.
     """
     trades = []
     pip_value_per_lot = 10.0  
@@ -29,7 +29,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             
             raw_sig = None
             
-            # 🚀 BREAKOUT GREZZO (Senza filtri EMA per catturare i fakeout)
+            # 1. Calcolo del Breakout Grezzo di base
             if strategy_name == 'Breakout Elite':
                 if curr_close > prev_high:
                     raw_sig = 'BUY'
@@ -37,7 +37,6 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'VWAP Strategy':
-                # Sostituito con deviazione di prezzo pura rispetto all'apertura
                 if curr_close > curr_open + (curr_open * 0.001):
                     raw_sig = 'BUY'
                 elif curr_close < curr_open - (curr_open * 0.001):
@@ -50,7 +49,11 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                 elif curr_close <= mid_point:
                     raw_sig = 'SELL'
 
-            df_candles.loc[idx, 'signal'] = raw_sig
+            # 🔄 2. INVERSIONE TOTALE (PURE RAW FADE): Entriamo esattamente all'opposto
+            if raw_sig == 'BUY':
+                df_candles.loc[idx, 'signal'] = 'SELL'
+            elif raw_sig == 'SELL':
+                df_candles.loc[idx, 'signal'] = 'BUY'
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -112,7 +115,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (RAW BREAKOUT) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (PURE RAW FADE) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
