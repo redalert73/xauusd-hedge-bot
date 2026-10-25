@@ -41,14 +41,14 @@ def load_market_data():
 
 def main():
     print("============================================================")
-    print("🚀 [ACTION TYPE: BACKTEST MASTER] - AVVIO COORDINATORE (SEGNALI RAPIDI)")
+    print("🚀 [ACTION TYPE: BACKTEST MASTER] - COORDINATORE (EMA 20/30/100 + ANTI-BREAKOUT)")
     print("============================================================")
     print("🔹 Parametri Operativi Bloccati:")
     print("- Lotto: 1.04")
     print("- Stop Loss (SL): -$2,400.0 USD")
     print("- Take Profit (TP): $2,000.0 USD")
     print("- Limite Singolo Trade (Slippage): -$2,800.0 USD")
-    print("- Modalità: Stress-Test Avverso / Innesco Segnali Immediato")
+    print("- Filtri Attivi: Tunnel EMA Multiple (20, 30, 100) & Anti-Breakout")
     print("============================================================\n")
 
     # Download centralizzato eseguito una sola volta
@@ -89,7 +89,7 @@ def main():
         })
 
     print("\n============================================================")
-    print("📋 [ACTION REPORT] RIEPILOGO SUDDIVISO PER STRATEGIA (SEGNALI RAPIDI)")
+    print("📋 [ACTION REPORT] RIEPILOGO SUDDIVISO PER STRATEGIA (EMA FILTERED)")
     print("============================================================")
     df_summary = pd.DataFrame(summary_data)
     print(df_summary.to_string(index=False))
