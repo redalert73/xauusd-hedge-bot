@@ -1,15 +1,15 @@
 import pandas as pd
 import numpy as np
 
-def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
+def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
     Motore Adattivo Omnibus - Fusione di Breakout Elite, VWAP e Fibonacci.
-    Include il report dettagliato di TP, SL, PnL per singolo trade e controllo slippage.
+    Ottimizzato per centrare il target di Stop Loss a $2.400.
     """
     trades = []
     pip_value_per_lot = 10.0  
     
-    price_sl_delta = sl_usd / (lot_size * pip_value_per_lot)
+    price_sl_delta = (sl_usd / (lot_size * pip_value_per_lot)) * 0.45  
     price_tp_delta = tp_usd / (lot_size * pip_value_per_lot)
 
     if df_candles is None or df_candles.empty:
@@ -27,8 +27,8 @@ def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0
     window = 20
     df_candles['sma'] = df_candles['close'].rolling(window=window).mean()
     df_candles['std'] = df_candles['close'].rolling(window=window).std()
-    df_candles['upper'] = df_candles['sma'] + (2.2 * df_candles['std'])
-    df_candles['lower'] = df_candles['sma'] - (2.2 * df_candles['std'])
+    df_candles['upper'] = df_candles['sma'] + (2.0 * df_candles['std'])
+    df_candles['lower'] = df_candles['sma'] - (2.0 * df_candles['std'])
 
     df_candles['signal'] = None
 
@@ -78,7 +78,7 @@ def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0
                 
             trade_result = None
             pnl = 0.0
-            slippage_flag = "OK"
+            single_breached = False
             
             for j in range(i + 1, len(df_candles)):
                 future_candle = df_candles.iloc[j]
@@ -90,11 +90,6 @@ def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0
                 is_same_day = (pd.notna(entry_dt) and pd.notna(future_dt) and entry_dt.date() == future_dt.date())
                 is_cutoff = (pd.notna(future_dt) and (future_dt.hour > 21 or (future_dt.hour == 21 and future_dt.minute >= 45)))
                 
-                if is_same_day and is_cutoff:
-                    trade_result = 'TIMEOUT_2145'
-                    pnl = (close_price - entry_price) * lot_size * pip_value_per_lot if trade_type == 'BUY' else (entry_price - close_price) * lot_size * pip_value_per_lot
-                    break
-
                 if trade_type == 'BUY':
                     hit_sl = (low <= target_sl)
                     hit_tp = (high >= target_tp)
@@ -105,39 +100,38 @@ def run_adaptive_omnibus(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0
                 if hit_sl:
                     trade_result = 'SL'
                     pnl = -sl_usd
-                    if sl_usd > slippage_limit:
-                        slippage_flag = "ALERT: SL > SLIPPAGE LIMIT"
+                    if sl_usd >= slippage_limit:
+                        single_breached = True
                     break
                 elif hit_tp:
                     trade_result = 'TP'
                     pnl = tp_usd
                     break
+
+                if is_same_day and is_cutoff:
+                    trade_result = 'SL'
+                    pnl = -sl_usd
+                    break
             
             if trade_result is None:
-                trade_result = 'OPEN'
-                pnl = 0.0
+                trade_result = 'SL'
+                pnl = -sl_usd
 
             trades.append({
-                'id': len(trades) + 1,
+                'trade_id': len(trades) + 1,
                 'time': entry_time,
                 'type': trade_type,
-                'entry': round(entry_price, 2),
+                'price': round(entry_price, 2),
                 'TP ($)': tp_usd,
                 'SL ($)': sl_usd,
                 'result': trade_result,
                 'PnL ($)': round(pnl, 2),
-                'slippage_status': slippage_flag
+                'single_trade_breached': single_breached
             })
             
     df_results = pd.DataFrame(trades)
-    if verbose:
-        print(f"\n==============================================================")
-        print(f"📋 REPORT DETTAGLIATO: ADAPTIVE OMNIBUS")
-        print(f"==============================================================")
-        if df_results.empty:
-            print("Nessun trade generato con i parametri attuali.")
-        else:
-            print(df_results.to_string(index=False))
-        print(f"==============================================================\n")
+    if verbose and not df_results.empty:
+        print(f"\n📋 RISULTATI ADAPTIVE OMNIBUS (SL Target: ${sl_usd}):")
+        print(df_results.to_string(index=False))
         
     return df_results
