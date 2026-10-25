@@ -13,34 +13,8 @@ def main():
     print("- Modalità: Stress-Test Avverso (Priorità SL)")
     print("============================================================\n")
 
-    # Simulazione caricamento dati e strategie
-    # (Inserisci qui il caricamento effettivo del tuo DataFrame df_candles)
-    
-    strategies = ['Breakout Elite', 'VWAP Strategy', 'Fibonacci Strategy']
-    summary_data = []
-
-    for strat in strategies:
-        print(f"⚙️ [MASTER] Richiesta analisi dettagliata per: {strat}")
-        
-        # Esecuzione del backtest senza scadenze EXPIRED
-        # df_results = run_detailed_backtest(df_candles, strat)
-        
-        # Segnaposto per struttura report
-        summary_data.append({
-            'Strategy': strat,
-            'Total Trades': 0,
-            'TP Wins': 0,
-            'SL Losses': 0,
-            'Net PnL ($)': 0.0,
-            'Single Trade Violations': 0
-        })
-
-    print("\n============================================================")
-    print("📋 [ACTION REPORT] RIEPILOGO COMPLESSIVO - BACKTEST MASTER")
-    print("============================================================")
-    df_summary = pd.DataFrame(summary_data)
-    print(df_summary.to_string(index=False))
-    print("============================================================")
+    # Inserisci o richiama il caricamento dei dati delle candele (df_candles)
+    # df_results = run_detailed_backtest(df_candles, 'Breakout Elite')
 
 if __name__ == '__main__':
     main()
