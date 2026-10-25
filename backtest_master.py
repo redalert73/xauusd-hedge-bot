@@ -1,19 +1,53 @@
+import os
+import requests
 import pandas as pd
 from backtest_detailed import run_detailed_backtest
 
 def load_market_data():
     """
-    Funzione di caricamento dei dati di mercato storici (Candele XAU/USD).
-    Sostituire o integrare con il caricamento da CSV/API reale.
+    Caricamento dei dati storici delle candele XAU/USD tramite Twelve Data API.
+    Legge la chiave API dalle variabili d'ambiente (TWELVE_DATA_API_KEY).
     """
+    api_key = os.getenv('TWELVE_DATA_API_KEY', 'demo')
+    symbol = 'XAU/USD'
+    interval = '1h'  # Intervallo temporale delle candele (es. '1h', '15min', etc.)
+    outputsize = 500  # Numero di candele storiche da recuperare
+    
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={api_key}"
+    
     try:
-        # Esempio di lettura dati se presenti in file locale o generati
-        # df = pd.read_csv('market_data.csv')
-        # return df
-        pass
+        print(f"🌐 [TWELVE DATA] Connessione in corso per il download di {symbol}...")
+        response = requests.get(url)
+        data = response.json()
+        
+        if data.get("status") == "ok" and "values" in data:
+            df = pd.DataFrame(data["values"])
+            
+            # Rinomina datetime in time per compatibilità con il backtest
+            df = df.rename(columns={'datetime': 'time'})
+            
+            # Conversione dei campi di prezzo in formato numerico
+            numeric_cols = ['open', 'high', 'low', 'close']
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+            # Ordinamento cronologico dal passato al presente
+            df = df.sort_values('time').reset_index(drop=True)
+            
+            # Inizializzazione colonna segnali se non presente nel payload grezzo
+            if 'signal' not in df.columns:
+                df['signal'] = None
+            
+            print(f"✅ Dati scaricati con successo da Twelve Data: {len(df)} candele elaborate.")
+            return df
+        else:
+            error_msg = data.get('message', 'Risposta non valida')
+            print(f"⚠️ Errore API Twelve Data: {error_msg}")
+            return pd.DataFrame()
+            
     except Exception as e:
-        print(f"⚠️ Errore caricamento dati: {e}")
-    return pd.DataFrame()
+        print(f"⚠️ Errore di connessione a Twelve Data API: {e}")
+        return pd.DataFrame()
 
 def main():
     print("============================================================")
@@ -27,16 +61,20 @@ def main():
     print("- Modalità: Stress-Test Avverso (Priorità SL)")
     print("============================================================\n")
 
-    # Caricamento dataset candele
+    # Caricamento dataset candele tramite Twelve Data API
     df_candles = load_market_data()
     
+    if df_candles.empty:
+        print("❌ Errore critico: Impossibile recuperare i dati da Twelve Data. Verifica la chiave API nei Secrets.")
+        return
+
     strategies = ['Breakout Elite', 'VWAP Strategy', 'Fibonacci Strategy']
     summary_data = []
 
     for strat in strategies:
         print(f"⚙️ [MASTER] Richiesta analisi dettagliata per: {strat}")
         
-        # Esecuzione backtest dettagliato sul set di dati
+        # Esecuzione del backtest dettagliato sui dati scaricati
         df_results = run_detailed_backtest(df_candles, strat)
         
         if not df_results.empty:
