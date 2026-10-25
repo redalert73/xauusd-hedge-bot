@@ -59,4 +59,3 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     print("-"*50)
     
     return df_trades
-    
