@@ -61,14 +61,19 @@ def run_master():
     for strat_mod, strat_name in strategies:
         print(f"\n⚙️ [MASTER] Richiesta analisi dettagliata per: {strat_name}")
         df_trades = run_detailed_backtest(df, strat_mod, strat_name)
+        
         if df_trades is not None and not df_trades.empty:
             total_trades = len(df_trades)
-            net_pnl = df_trades['cumulative_pnl'].iloc[-1]
+            net_pnl = df_trades['cumulative_pnl ($)'].iloc[-1]
+            
+            # Conteggio dei trade in TP basato sull'esito registrato nel detailed
+            tp_wins = int((df_trades['result'] == 'WIN (TP)').sum())
             violations = int(df_trades['single_trade_breached'].sum())
             
             master_summary.append({
                 'Strategy': strat_name,
                 'Total Trades': total_trades,
+                'TP Wins': tp_wins,
                 'Net PnL ($)': net_pnl,
                 'Single Trade Violations': violations
             })
@@ -83,3 +88,4 @@ def run_master():
 
 if __name__ == "__main__":
     run_master()
+    
