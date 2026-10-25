@@ -10,8 +10,8 @@ def load_market_data():
     """
     api_key = os.getenv('TWELVE_DATA_API_KEY', 'demo')
     symbol = 'XAU/USD'
-    interval = '1h'  # Intervallo temporale delle candele (es. '1h', '15min', etc.)
-    outputsize = 500  # Numero di candele storiche da recuperare
+    interval = '1h'
+    outputsize = 500
     
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={api_key}"
     
@@ -22,19 +22,14 @@ def load_market_data():
         
         if data.get("status") == "ok" and "values" in data:
             df = pd.DataFrame(data["values"])
-            
-            # Rinomina datetime in time per compatibilità con il backtest
             df = df.rename(columns={'datetime': 'time'})
             
-            # Conversione dei campi di prezzo in formato numerico
             numeric_cols = ['open', 'high', 'low', 'close']
             for col in numeric_cols:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
                 
-            # Ordinamento cronologico dal passato al presente
             df = df.sort_values('time').reset_index(drop=True)
             
-            # Inizializzazione colonna segnali se non presente nel payload grezzo
             if 'signal' not in df.columns:
                 df['signal'] = None
             
@@ -58,10 +53,9 @@ def main():
     print("- Stop Loss (SL): -$2,400.0 USD")
     print("- Take Profit (TP): $2,000.0 USD")
     print("- Limite Singolo Trade (Slippage): -$2,800.0 USD (Aggiornato)")
-    print("- Modalità: Stress-Test Avverso (Priorità SL)")
+    print("- Modalità: Stress-Test Avverso (Priorità Assoluta SL)")
     print("============================================================\n")
 
-    # Caricamento dataset candele tramite Twelve Data API
     df_candles = load_market_data()
     
     if df_candles.empty:
@@ -74,7 +68,6 @@ def main():
     for strat in strategies:
         print(f"⚙️ [MASTER] Richiesta analisi dettagliata per: {strat}")
         
-        # Esecuzione del backtest dettagliato sui dati scaricati
         df_results = run_detailed_backtest(df_candles, strat)
         
         if not df_results.empty:
