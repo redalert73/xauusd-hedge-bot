@@ -3,7 +3,7 @@ import pandas as pd
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0):
     """
     Simulazione Backtest Dettagliata - Modalità Stress-Test Avverso (Priorità SL).
-    I trade rimangono aperti finché non colpiscono il TP o lo SL sui picchi della candela.
+    Genera automaticamente i segnali se assenti e valuta i trade su TP/SL.
     """
     trades = []
     pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
@@ -19,6 +19,24 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     if df_candles is None or df_candles.empty:
         print(f"⚠️ [DETAILED] Nessun dato disponibile o candele vuote per {strategy_name}.")
         return pd.DataFrame()
+
+    df_candles = df_candles.copy()
+
+    # Generazione automatica dei segnali se la colonna 'signal' non esiste o è vuota
+    if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
+        print(f"💡 [SIGNAL GENERATOR] Generazione automatica segnali di breakout per {strategy_name}...")
+        df_candles['signal'] = None
+        
+        # Logica di breakout basata su una finestra mobile di 10 candele
+        window = 10
+        df_candles['rolling_max'] = df_candles['high'].shift(1).rolling(window=window).max()
+        df_candles['rolling_min'] = df_candles['low'].shift(1).rolling(window=window).min()
+        
+        for idx in range(window, len(df_candles)):
+            if df_candles.loc[idx, 'close'] > df_candles.loc[idx, 'rolling_max']:
+                df_candles.loc[idx, 'signal'] = 'BUY'
+            elif df_candles.loc[idx, 'close'] < df_candles.loc[idx, 'rolling_min']:
+                df_candles.loc[idx, 'signal'] = 'SELL'
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -108,5 +126,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
         print(f"- Violazioni Limite Singolo: {violations}")
         print(f"- PnL Netto Complessivo: ${net_pnl:,.2f}")
         print("============================================================\n")
+    else:
+        print(f"⚠️ [DETAILED] Nessun trade generato per {strategy_name}.")
         
     return df_results
