@@ -19,7 +19,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
         
-        # Condizione di ingresso (Esempio basato su segnale generato dalla strategia)
+        # Condizione di ingresso in base al segnale generato
         if row.get('signal') in ['BUY', 'SELL']:
             trade_type = row['signal']
             entry_price = row['close']
@@ -36,7 +36,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             pnl = 0.0
             single_breached = False
             
-            # Scorrimento candele successive per esito TP/SL (Ignora EXPIRED)
+            # Scorrimento candele successive: eliminata la scadenza temporale (EXPIRED)
             for j in range(i + 1, len(df_candles)):
                 future_candle = df_candles.iloc[j]
                 high = future_candle['high']
