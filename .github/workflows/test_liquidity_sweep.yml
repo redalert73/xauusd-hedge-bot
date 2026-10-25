@@ -23,7 +23,7 @@ jobs:
           pip install pandas numpy requests
 
       - name: Run Liquidity Sweep Adaptive Backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -c "import backtest_liquidity_sweep_adaptive as ls; import pandas as pd; print('Avvio test Liquidity Sweep...');"
-          # Sostituisci la riga sottostante con la chiamata effettiva presente nel tuo backtest_master per questo modulo
           python backtest_master.py --strategy liquidity_sweep
