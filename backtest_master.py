@@ -4,10 +4,6 @@ import pandas as pd
 from backtest_detailed import run_detailed_backtest
 
 def load_market_data():
-    """
-    Caricamento dei dati storici delle candele XAU/USD tramite Twelve Data API.
-    Legge la chiave API dalle variabili d'ambiente (TWELVE_DATA_API_KEY).
-    """
     api_key = os.getenv('TWELVE_DATA_API_KEY', 'demo')
     symbol = 'XAU/USD'
     interval = '1h'
@@ -36,8 +32,7 @@ def load_market_data():
             print(f"✅ Dati scaricati con successo da Twelve Data: {len(df)} candele elaborate.")
             return df
         else:
-            error_msg = data.get('message', 'Risposta non valida')
-            print(f"⚠️ Errore API Twelve Data: {error_msg}")
+            print(f"⚠️ Errore API Twelve Data: {data.get('message', 'Risposta non valida')}")
             return pd.DataFrame()
             
     except Exception as e:
@@ -46,28 +41,27 @@ def load_market_data():
 
 def main():
     print("============================================================")
-    print("🚀 [ACTION TYPE: BACKTEST MASTER] - AVVIO COORDINATORE")
+    print("🚀 [ACTION TYPE: BACKTEST MASTER] - AVVIO COORDINATORE (STRESS SL)")
     print("============================================================")
     print("🔹 Parametri Operativi Bloccati:")
     print("- Lotto: 1.04")
     print("- Stop Loss (SL): -$2,400.0 USD")
     print("- Take Profit (TP): $2,000.0 USD")
-    print("- Limite Singolo Trade (Slippage): -$2,800.0 USD (Aggiornato)")
-    print("- Modalità: Stress-Test Avverso (Priorità Assoluta SL)")
+    print("- Limite Singolo Trade (Slippage): -$2,800.0 USD")
+    print("- Modalità: Stress-Test Avverso (Priorità SL / Master Sintetico)")
     print("============================================================\n")
 
     df_candles = load_market_data()
     
     if df_candles.empty:
-        print("❌ Errore critico: Impossibile recuperare i dati da Twelve Data. Verifica la chiave API nei Secrets.")
+        print("❌ Errore critico: Impossibile recuperare i dati da Twelve Data.")
         return
 
     strategies = ['Breakout Elite', 'VWAP Strategy', 'Fibonacci Strategy']
     summary_data = []
 
     for strat in strategies:
-        print(f"⚙️ [MASTER] Richiesta analisi dettagliata per: {strat}")
-        
+        print(f"⚙️ [MASTER] Elaborazione strategia: {strat}")
         df_results = run_detailed_backtest(df_candles, strat)
         
         if not df_results.empty:
@@ -86,14 +80,14 @@ def main():
         summary_data.append({
             'Strategy': strat,
             'Total Trades': total_trades,
-            'TP Wins': tp_wins,
             'SL Losses': sl_losses,
+            'TP Wins': tp_wins,
             'Net PnL ($)': net_pnl,
-            'Single Trade Violations': violations
+            'Violations': violations
         })
 
     print("\n============================================================")
-    print("📋 [ACTION REPORT] RIEPILOGO COMPLESSIVO - BACKTEST MASTER")
+    print("📋 [ACTION REPORT] RIEPILOGO COMPLESSIVO - STRESS TEST SL")
     print("============================================================")
     df_summary = pd.DataFrame(summary_data)
     print(df_summary.to_string(index=False))
