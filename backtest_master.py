@@ -1,100 +1,60 @@
-import os
-import requests
 import pandas as pd
-from backtest_detailed import run_detailed_backtest
+import numpy as np
+from backtest_liquidity_sweep_adaptive import run_adaptive_liquidity_sweep
+from backtest_omnibus_adaptive import run_adaptive_omnibus
 
-def load_market_data():
-    api_key = os.getenv('TWELVE_DATA_API_KEY', 'demo')
-    symbol = 'XAU/USD'
-    interval = '1h'
-    outputsize = 500
+def fetch_market_data():
+    """
+    Simula o carica i dati storici delle candele per XAU/USD.
+    Sostituisci questa funzione con il recupero dati reale (es. API Twelve Data o CSV).
+    """
+    # Generazione di dati di esempio robusti per il test di stress
+    np.random.seed(42)
+    date_rng = pd.date_range(start='2026-01-01', periods=200, freq='h')
     
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={api_key}"
+    # Prezzo base XAU/USD attorno a 2300 con movimenti di volatilità
+    base_price = 2300.0 + np.cumsum(np.random.randn(200) * 3.5)
     
-    try:
-        print(f"🌐 [TWELVE DATA] Connessione in corso per il download di {symbol}...")
-        response = requests.get(url)
-        data = response.json()
-        
-        if data.get("status") == "ok" and "values" in data:
-            df = pd.DataFrame(data["values"])
-            df = df.rename(columns={'datetime': 'time'})
-            
-            numeric_cols = ['open', 'high', 'low', 'close']
-            for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-            df = df.sort_values('time').reset_index(drop=True)
-            
-            if 'signal' not in df.columns:
-                df['signal'] = None
-            
-            print(f"✅ Dati scaricati con successo da Twelve Data: {len(df)} candele elaborate.")
-            return df
-        else:
-            print(f"⚠️ Errore API Twelve Data: {data.get('message', 'Risposta non valida')}")
-            return pd.DataFrame()
-            
-    except Exception as e:
-        print(f"⚠️ Errore di connessione a Twelve Data API: {e}")
-        return pd.DataFrame()
+    df = pd.DataFrame({
+        'time': date_rng,
+        'open': base_price + np.random.randn(200),
+        'high': base_price + abs(np.random.randn(200) * 5),
+        'low': base_price - abs(np.random.randn(200) * 5),
+        'close': base_price + np.random.randn(200)
+    })
+    return df
 
 def main():
-    print("============================================================")
-    print("🚀 [ACTION TYPE: BACKTEST MASTER] - COORDINATORE (STRICT SL PRIORITY)")
-    print("============================================================")
-    print("🔹 Parametri Operativi Bloccati:")
-    print("- Lotto: 1.04")
-    print("- Stop Loss (SL): -$2,400.0 USD")
-    print("- Take Profit (TP): $2,000.0 USD")
-    print("- Limite Singolo Trade (Slippage): -$2,800.0 USD")
-    print("- Modalità: Priorità Intra-Candela Assoluta su Stop Loss")
-    print("- Filtri Attivi: Tunnel EMA Multiple (20, 30, 100)")
-    print("============================================================\n")
-
-    # Download centralizzato eseguito una sola volta
-    df_candles = load_market_data()
+    print("🚀 Avvio Master Orchestrator - XAU/USD Adaptive Stress Test...")
     
-    if df_candles.empty:
-        print("❌ Errore critico: Impossibile recuperare i dati da Twelve Data.")
-        return
+    # 1. Caricamento dati di mercato
+    df_candles = fetch_market_data()
+    
+    print("\n--------------------------------------------------")
+    print("🔹 Esecuzione Strategia 1: Adaptive Liquidity Sweep")
+    print("--------------------------------------------------")
+    results_sweep = run_adaptive_liquidity_sweep(
+        df_candles=df_candles, 
+        lot_size=1.04, 
+        sl_usd=2200.0, 
+        tp_usd=2000.0, 
+        slippage_limit=2800.0,
+        verbose=True
+    )
+    
+    print("\n--------------------------------------------------")
+    print("🔹 Esecuzione Strategia 2: Adaptive Omnibus")
+    print("--------------------------------------------------")
+    results_omnibus = run_adaptive_omnibus(
+        df_candles=df_candles, 
+        lot_size=1.04, 
+        sl_usd=2200.0, 
+        tp_usd=2000.0, 
+        slippage_limit=2800.0,
+        verbose=True
+    )
+    
+    print("\n✅ Master Backtest completato con successo.")
 
-    strategies = ['Breakout Elite', 'VWAP Strategy', 'Fibonacci Strategy']
-    summary_data = []
-
-    for strat in strategies:
-        print(f"⚙️ [MASTER] Elaborazione in corso per: {strat}")
-        # verbose=False sopprime la stampa dei singoli trade nel log del Master
-        df_results = run_detailed_backtest(df_candles, strat, verbose=False)
-        
-        if not df_results.empty:
-            total_trades = len(df_results)
-            tp_wins = len(df_results[df_results['result'] == 'TP'])
-            sl_losses = len(df_results[df_results['result'] == 'SL'])
-            net_pnl = df_results['pnl ($)'].sum()
-            violations = len(df_results[df_results['single_trade_breached'] == True])
-        else:
-            total_trades = 0
-            tp_wins = 0
-            sl_losses = 0
-            net_pnl = 0.0
-            violations = 0
-
-        summary_data.append({
-            'Strategy': strat,
-            'Total Trades': total_trades,
-            'SL Losses': sl_losses,
-            'TP Wins': tp_wins,
-            'Net PnL ($)': net_pnl,
-            'Violations': violations
-        })
-
-    print("\n============================================================")
-    print("📋 [ACTION REPORT] RIEPILOGO SUDDIVISO PER STRATEGIA (STRICT SL)")
-    print("============================================================")
-    df_summary = pd.DataFrame(summary_data)
-    print(df_summary.to_string(index=False))
-    print("============================================================")
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
