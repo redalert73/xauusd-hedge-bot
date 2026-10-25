@@ -1,9 +1,9 @@
 import pandas as pd
 
-def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0):
+def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Simulazione Backtest Dettagliata - Modalità Stress-Test Avverso (Priorità Assoluta SL).
-    Stampa il dettaglio dei singoli trade ed esegue il controllo rigoroso dello Stop Loss.
+    Motore di Calcolo Dettagliato - Modalità Stress-Test Avverso (Priorità Assoluta SL).
+    Generazione segnali ultra-rapida (finestra = 1) per innescare i trade il prima possibile.
     """
     trades = []
     pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
@@ -16,17 +16,35 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
 
     df_candles = df_candles.copy()
 
+    # Generazione segnali ultra-rapida (finestra = 1 per attivazione immediata)
     if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
         df_candles['signal'] = None
-        window = 10
-        df_candles['rolling_max'] = df_candles['high'].shift(1).rolling(window=window).max()
-        df_candles['rolling_min'] = df_candles['low'].shift(1).rolling(window=window).min()
         
-        for idx in range(window, len(df_candles)):
-            if df_candles.loc[idx, 'close'] > df_candles.loc[idx, 'rolling_max']:
-                df_candles.loc[idx, 'signal'] = 'BUY'
-            elif df_candles.loc[idx, 'close'] < df_candles.loc[idx, 'rolling_min']:
-                df_candles.loc[idx, 'signal'] = 'SELL'
+        # Dalla seconda candela in poi, confronta subito con la precedente
+        for idx in range(1, len(df_candles)):
+            prev_high = df_candles.loc[idx - 1, 'high']
+            prev_low = df_candles.loc[idx - 1, 'low']
+            curr_close = df_candles.loc[idx, 'close']
+            
+            if strategy_name == 'Breakout Elite':
+                if curr_close > prev_high:
+                    df_candles.loc[idx, 'signal'] = 'BUY'
+                elif curr_close < prev_low:
+                    df_candles.loc[idx, 'signal'] = 'SELL'
+            elif strategy_name == 'VWAP Strategy':
+                # Esempio reattivo immediato basato su soglia rapida
+                curr_open = df_candles.loc[idx, 'open']
+                if curr_close > curr_open:
+                    df_candles.loc[idx, 'signal'] = 'BUY'
+                else:
+                    df_candles.loc[idx, 'signal'] = 'SELL'
+            elif strategy_name == 'Fibonacci Strategy':
+                # Trigger immediato basato sul range precedente
+                mid_point = (prev_high + prev_low) / 2
+                if curr_close > mid_point:
+                    df_candles.loc[idx, 'signal'] = 'BUY'
+                else:
+                    df_candles.loc[idx, 'signal'] = 'SELL'
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -92,8 +110,9 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             
     df_results = pd.DataFrame(trades)
     
-    if not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE SINGOLI TRADE (STRESS SL ABSOLUTE) -> {strategy_name.upper()}:")
+    # Stampa i singoli trade solo se verbose è True
+    if verbose and not df_results.empty:
+        print(f"\n📋 ELENCO PUNTUALE SINGOLI TRADE (STRESS SL) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
