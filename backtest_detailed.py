@@ -1,5 +1,5 @@
 # ==========================================
-# 🔵 [BACKTEST DETAILED] - ELENCO PUNTUALE E CONTEGGIO TP
+# 🔵 [BACKTEST DETAILED] - STRESS TEST SL & REPORT GRANULARE
 # ==========================================
 
 import pandas as pd
@@ -37,11 +37,11 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     print(f"📊 [ACTION TYPE: BACKTEST DETAILED] -> Analisi: {strategy_name.upper()}")
     print("="*60)
     
-    # Parametri definitivi bloccati
+    # Parametri definitivi bloccati (Slippage limit aggiornato a -$2,800.0)
     lot_size = 1.04
     sl_usd = -2400.0
     tp_usd = 2000.0
-    slippage_limit_per_trade = -2900.0  # Limite da non raggiungere mai sul singolo trade
+    slippage_limit_per_trade = -2800.0  # Limite restrittivo da non raggiungere mai sul singolo trade
     
     # Calcolo della conversione di prezzo per XAU/USD (1 lotto = 100 oz)
     dollar_per_point = lot_size * 100
@@ -79,6 +79,7 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
         trade_pnl = 0.0
         trade_result = "OPEN"
         
+        # Scansione in modalità stress-test: privilegia il raggiungimento dello SL
         for future_idx in range(start_loc + 1, len(df_prices)):
             row = df_prices.iloc[future_idx]
             h = row['high']
@@ -87,38 +88,30 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
             if sig_type.upper() == 'BUY':
                 hit_tp = h >= target_tp
                 hit_sl = l <= target_sl
-                if hit_tp and hit_sl:
+                
+                if hit_sl:
                     trade_pnl = sl_usd
                     losses_count += 1
-                    trade_result = "LOSS (SL)"
+                    trade_result = "LOSS (SL - Stress)"
                     break
                 elif hit_tp:
                     trade_pnl = tp_usd
                     wins_count += 1
                     trade_result = "WIN (TP)"
                     break
-                elif hit_sl:
-                    trade_pnl = sl_usd
-                    losses_count += 1
-                    trade_result = "LOSS (SL)"
-                    break
-            else:
+            else:  # SELL
                 hit_tp = l <= target_tp
                 hit_sl = h >= target_sl
-                if hit_tp and hit_sl:
+                
+                if hit_sl:
                     trade_pnl = sl_usd
                     losses_count += 1
-                    trade_result = "LOSS (SL)"
+                    trade_result = "LOSS (SL - Stress)"
                     break
                 elif hit_tp:
                     trade_pnl = tp_usd
                     wins_count += 1
                     trade_result = "WIN (TP)"
-                    break
-                elif hit_sl:
-                    trade_pnl = sl_usd
-                    losses_count += 1
-                    trade_result = "LOSS (SL)"
                     break
         else:
             trade_pnl = 0.0
@@ -144,15 +137,15 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     df_trades = pd.DataFrame(detailed_trades)
     
     # Stampa dell'elenco puntuale di ogni singolo trade
-    print("\n📋 ELENCO PUNTUALE SINGOLI TRADE:")
+    print("\n📋 ELENCO PUNTUALE SINGOLI TRADE (STRESS SL):")
     print(df_trades.to_string(index=False))
     print("-" * 60)
     
-    # Stampa del report riepilogativo con enfasi sui trade in TP
+    # Stampa del report riepilogativo
     print(f"📈 [DETAILED REPORT SUMMARY] -> {strategy_name.upper()}:")
     print(f"   - Totale Trade Eseguiti: {len(df_trades)}")
     print(f"   - 🎯 Totale Trade in Take Profit (TP): {wins_count}")
-    print(f"   - ❌ Totale Trade in Stop Loss (SL): {losses_count}")
+    print(f"   - ❌ Totale Trade in Stop Loss (SL - Stress): {losses_count}")
     print(f"   - Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
     print(f"   - Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
     print(f"   - Violazioni Limite Singolo: {violating_trades_count}")
