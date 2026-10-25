@@ -3,7 +3,8 @@ import numpy as np
 
 def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Modalità Anti-Breakout con Filtro EMA Multiple (20, 30, 100).
+    Motore di Calcolo Dettagliato - Modalità Breakout Standard (Target SL).
+    I segnali seguono la rottura per testare la cattura nei fakeout e massimizzare i test di Stop Loss.
     """
     trades = []
     pip_value_per_lot = 10.0  # Valore indicativo punto/pip per XAU/USD per lotto
@@ -25,12 +26,10 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
         df_candles['signal'] = None
         
-        # Partiamo da almeno 100 periodi per avere l'EMA 100 stabile
         for idx in range(100, len(df_candles)):
             prev_high = df_candles.loc[idx - 1, 'high']
             prev_low = df_candles.loc[idx - 1, 'low']
             curr_close = df_candles.loc[idx, 'close']
-            curr_open = df_candles.loc[idx, 'open']
             
             e20 = df_candles.loc[idx, 'ema_20']
             e30 = df_candles.loc[idx, 'ema_30']
@@ -38,36 +37,31 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
             
             raw_sig = None
             
-            # Condizione di trend macro (es. EMA stack rialzista o ribassista)
             is_bullish_stack = (e20 > e30) and (e30 > e100)
             is_bearish_stack = (e20 < e30) and (e30 < e100)
             
             if strategy_name == 'Breakout Elite':
-                # Se rompe il massimo ma siamo in stack rialzista estremo (possibile esaurimento / fakeout)
-                if curr_close > prev_high and is_bullish_stack:
-                    raw_sig = 'BUY' # Sarà invertito in SELL
-                elif curr_close < prev_low and is_bearish_stack:
-                    raw_sig = 'SELL' # Sarà invertito in BUY
+                # Segnale diretto nella direzione del breakout (senza inversione)
+                if curr_close > prev_high and not is_bullish_stack:
+                    raw_sig = 'BUY' 
+                elif curr_close < prev_low and not is_bearish_stack:
+                    raw_sig = 'SELL' 
                     
             elif strategy_name == 'VWAP Strategy':
-                # Sfruttiamo il posizionamento rispetto all'EMA 20 e 30
-                if curr_close > e20 and curr_close < curr_open:
+                if curr_close > e20:
                     raw_sig = 'BUY'
-                elif curr_close < e20 and curr_close > curr_open:
+                elif curr_close < e20:
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'Fibonacci Strategy':
                 mid_point = (prev_high + prev_low) / 2
-                if curr_close > mid_point and curr_close > e100:
+                if curr_close > mid_point:
                     raw_sig = 'BUY'
-                elif curr_close <= mid_point and curr_close < e100:
+                elif curr_close <= mid_point:
                     raw_sig = 'SELL'
 
-            # 🔄 INVERSIONE ANTI-BREAKOUT APPLICATA ALLA FONTE
-            if raw_sig == 'BUY':
-                df_candles.loc[idx, 'signal'] = 'SELL'
-            elif raw_sig == 'SELL':
-                df_candles.loc[idx, 'signal'] = 'BUY'
+            # Assegnazione diretta del segnale (Breakout Standard)
+            df_candles.loc[idx, 'signal'] = raw_sig
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -133,7 +127,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (EMA 20/30/100 FILTER) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (TARGET SL STRESS) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
