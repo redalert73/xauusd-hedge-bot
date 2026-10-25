@@ -1,5 +1,5 @@
 # ==========================================
-# 🔵 [BACKTEST DETAILED] - ANALISI GRANULARE
+# 🔵 [BACKTEST DETAILED] - ELENCO PUNTUALE E CONTEGGIO TP
 # ==========================================
 
 import pandas as pd
@@ -33,15 +33,20 @@ def download_twelve_data():
     return df
 
 def run_detailed_backtest(df, strategy_module, strategy_name):
-    print("\n" + "-"*50)
+    print("\n" + "="*60)
     print(f"📊 [ACTION TYPE: BACKTEST DETAILED] -> Analisi: {strategy_name.upper()}")
-    print("-"*50)
+    print("="*60)
     
     # Parametri definitivi bloccati
     lot_size = 1.04
     sl_usd = -2400.0
     tp_usd = 2000.0
     slippage_limit_per_trade = -2900.0  # Limite da non raggiungere mai sul singolo trade
+    
+    # Calcolo della conversione di prezzo per XAU/USD (1 lotto = 100 oz)
+    dollar_per_point = lot_size * 100
+    tp_distance = tp_usd / dollar_per_point
+    sl_distance = abs(sl_usd) / dollar_per_point
     
     signals = strategy_module.run(df)
     if not signals:
@@ -51,15 +56,76 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
     detailed_trades = []
     accumulated_pnl = 0.0
     violating_trades_count = 0
+    wins_count = 0
+    losses_count = 0
+    
+    df_prices = df.copy()
     
     for idx, sig in enumerate(signals, 1):
         sig_time, sig_type, sig_price = sig
         
-        # Esito del singolo trade basato sullo Stop Loss impostato
-        trade_pnl = sl_usd
+        try:
+            start_loc = df_prices.index.get_loc(sig_time)
+        except KeyError:
+            continue
+            
+        if sig_type.upper() == 'BUY':
+            target_tp = sig_price + tp_distance
+            target_sl = sig_price - sl_distance
+        else:
+            target_tp = sig_price - tp_distance
+            target_sl = sig_price + sl_distance
+            
+        trade_pnl = 0.0
+        trade_result = "OPEN"
+        
+        for future_idx in range(start_loc + 1, len(df_prices)):
+            row = df_prices.iloc[future_idx]
+            h = row['high']
+            l = row['low']
+            
+            if sig_type.upper() == 'BUY':
+                hit_tp = h >= target_tp
+                hit_sl = l <= target_sl
+                if hit_tp and hit_sl:
+                    trade_pnl = sl_usd
+                    losses_count += 1
+                    trade_result = "LOSS (SL)"
+                    break
+                elif hit_tp:
+                    trade_pnl = tp_usd
+                    wins_count += 1
+                    trade_result = "WIN (TP)"
+                    break
+                elif hit_sl:
+                    trade_pnl = sl_usd
+                    losses_count += 1
+                    trade_result = "LOSS (SL)"
+                    break
+            else:
+                hit_tp = l <= target_tp
+                hit_sl = h >= target_sl
+                if hit_tp and hit_sl:
+                    trade_pnl = sl_usd
+                    losses_count += 1
+                    trade_result = "LOSS (SL)"
+                    break
+                elif hit_tp:
+                    trade_pnl = tp_usd
+                    wins_count += 1
+                    trade_result = "WIN (TP)"
+                    break
+                elif hit_sl:
+                    trade_pnl = sl_usd
+                    losses_count += 1
+                    trade_result = "LOSS (SL)"
+                    break
+        else:
+            trade_pnl = 0.0
+            trade_result = "EXPIRED"
+
         accumulated_pnl += trade_pnl
         
-        # Controllo sul SINGOLO TRADE rispetto al limite di slippage
         single_trade_breached = trade_pnl <= slippage_limit_per_trade
         if single_trade_breached:
             violating_trades_count += 1
@@ -67,23 +133,31 @@ def run_detailed_backtest(df, strategy_module, strategy_name):
         detailed_trades.append({
             'trade_id': idx,
             'time': sig_time,
-            'type': sig_type,
-            'price': sig_price,
-            'lot': lot_size,
-            'pnl': trade_pnl,
-            'cumulative_pnl': accumulated_pnl,
+            'type': sig_type.upper(),
+            'price': round(sig_price, 2),
+            'result': trade_result,
+            'pnl ($)': trade_pnl,
+            'cumulative_pnl ($)': accumulated_pnl,
             'single_trade_breached': single_trade_breached
         })
         
     df_trades = pd.DataFrame(detailed_trades)
     
-    print(f"📈 [DETAILED REPORT] {strategy_name}:")
+    # Stampa dell'elenco puntuale di ogni singolo trade
+    print("\n📋 ELENCO PUNTUALE SINGOLI TRADE:")
+    print(df_trades.to_string(index=False))
+    print("-" * 60)
+    
+    # Stampa del report riepilogativo con enfasi sui trade in TP
+    print(f"📈 [DETAILED REPORT SUMMARY] -> {strategy_name.upper()}:")
     print(f"   - Totale Trade Eseguiti: {len(df_trades)}")
+    print(f"   - 🎯 Totale Trade in Take Profit (TP): {wins_count}")
+    print(f"   - ❌ Totale Trade in Stop Loss (SL): {losses_count}")
     print(f"   - Lotto: {lot_size} | SL: ${sl_usd:,.2f} | TP: ${tp_usd:,.2f}")
     print(f"   - Limite Singolo Trade (Slippage): ${slippage_limit_per_trade:,.2f}")
     print(f"   - Violazioni Limite Singolo: {violating_trades_count}")
     print(f"   - PnL Netto Complessivo: ${accumulated_pnl:,.2f}")
-    print("-"*50)
+    print("="*60)
     
     return df_trades
 
