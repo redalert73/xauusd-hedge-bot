@@ -1,0 +1,39 @@
+name: Backtest Hedge (dati reali)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Pagine da 5000 candele M5"
+        default: "6"
+      optimize:
+        description: "Ricerca parametri (true/false)"
+        default: "true"
+      mode:
+        description: "adaptive | trend | reversion"
+        default: "adaptive"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Run backtest
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: |
+          if [ "${{ inputs.optimize }}" = "true" ]; then
+            python backtest_hedge.py --pages ${{ inputs.pages }} --optimize --mode ${{ inputs.mode }} | tee backtest_hedge_report.txt
+          else
+            python backtest_hedge.py --pages ${{ inputs.pages }} | tee backtest_hedge_report.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backtest-hedge-report
+          path: backtest_hedge_report.txt
