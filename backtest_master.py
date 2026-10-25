@@ -40,7 +40,8 @@ def run_master():
     print("   - Lotto: 1.04")
     print("   - Stop Loss (SL): -$2,400.0 USD")
     print("   - Take Profit (TP): $2,000.0 USD")
-    print("   - Limite Singolo Trade (Slippage): -$2,900.0 USD (Da non raggiungere mai)")
+    print("   - Limite Singolo Trade (Slippage): -$2,800.0 USD (Aggiornato)")
+    print("   - Modalità: Stress-Test Avverso (Priorità SL)")
     print("="*60)
     
     df = download_twelve_data()
@@ -66,14 +67,15 @@ def run_master():
             total_trades = len(df_trades)
             net_pnl = df_trades['cumulative_pnl ($)'].iloc[-1]
             
-            # Conteggio dei trade in TP basato sull'esito registrato nel detailed
             tp_wins = int((df_trades['result'] == 'WIN (TP)').sum())
+            sl_losses = int(df_trades['result'].str.contains('LOSS').sum())
             violations = int(df_trades['single_trade_breached'].sum())
             
             master_summary.append({
                 'Strategy': strat_name,
                 'Total Trades': total_trades,
                 'TP Wins': tp_wins,
+                'SL Losses': sl_losses,
                 'Net PnL ($)': net_pnl,
                 'Single Trade Violations': violations
             })
@@ -88,4 +90,3 @@ def run_master():
 
 if __name__ == "__main__":
     run_master()
-    
