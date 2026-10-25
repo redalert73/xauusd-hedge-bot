@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
 
-def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
+def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
-    Motore di Calcolo Dettagliato - Pure Raw Fade (Inversione Totale del Breakout Grezzo) + Strict SL Priority.
-    Inverte i segnali di breakout per scommettere contro la rottura, massimizzando l'impatto degli Stop Loss.
+    Motore di Calcolo Dettagliato - Unified Volatility Exhaustion & Mean Reversion Stress Test.
+    Sfrutta le Bande di Bollinger estese per catturare i picchi di prezzo e forzare i test di Stop Loss.
     """
     trades = []
     pip_value_per_lot = 10.0  
@@ -17,43 +17,55 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
 
     df_candles = df_candles.copy()
     df_candles['close'] = pd.to_numeric(df_candles['close'], errors='coerce')
+    df_candles['high'] = pd.to_numeric(df_candles['high'], errors='coerce')
+    df_candles['low'] = pd.to_numeric(df_candles['low'], errors='coerce')
+    df_candles['open'] = pd.to_numeric(df_candles['open'], errors='coerce')
+
+    # Indicatori di Volatilità (Bande di Bollinger a 20 periodi, 2.2 Deviazioni Standard)
+    window = 20
+    std_dev = 2.2
+    df_candles['sma'] = df_candles['close'].rolling(window=window).mean()
+    df_candles['std'] = df_candles['close'].rolling(window=window).std()
+    df_candles['upper_band'] = df_candles['sma'] + (df_dev := std_dev * df_candles['std'])
+    df_candles['lower_band'] = df_candles['sma'] - df_dev
 
     if 'signal' not in df_candles.columns or df_candles['signal'].dropna().empty:
         df_candles['signal'] = None
         
-        for idx in range(50, len(df_candles)):
-            prev_high = df_candles.loc[idx - 1, 'high']
-            prev_low = df_candles.loc[idx - 1, 'low']
+        for idx in range(window, len(df_candles)):
             curr_close = df_candles.loc[idx, 'close']
-            curr_open = df_candles.loc[idx, 'open']
+            upper = df_candles.loc[idx, 'upper_band']
+            lower = df_candles.loc[idx, 'lower_band']
             
             raw_sig = None
             
-            # 1. Calcolo del Breakout Grezzo di base
+            # Logica unificata basata sull'estensione estrema di volatilità
             if strategy_name == 'Breakout Elite':
-                if curr_close > prev_high:
+                # Estensione rialzista estrema -> ci posizioniamo long sui massimi per subire l'inversione
+                if curr_close > upper:
                     raw_sig = 'BUY'
-                elif curr_close < prev_low:
+                elif curr_close < lower:
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'VWAP Strategy':
-                if curr_close > curr_open + (curr_open * 0.001):
+                # Sfruttiamo la deviazione rispetto alla SMA centrale
+                sma_val = df_candles.loc[idx, 'sma']
+                if curr_close > sma_val + (df_candles.loc[idx, 'std'] * 1.5):
                     raw_sig = 'BUY'
-                elif curr_close < curr_open - (curr_open * 0.001):
+                elif curr_close < sma_val - (df_candles.loc[idx, 'std'] * 1.5):
                     raw_sig = 'SELL'
                     
             elif strategy_name == 'Fibonacci Strategy':
-                mid_point = (prev_high + prev_low) / 2
-                if curr_close > mid_point:
+                # Estrazione basata sui range dinamici delle ultime 5 candele
+                recent_high = df_candles.loc[idx-5:idx-1, 'high'].max()
+                recent_low = df_candles.loc[idx-5:idx-1, 'low'].min()
+                fib_zone = recent_low + (recent_high - recent_low) * 0.786
+                if curr_close > fib_zone:
                     raw_sig = 'BUY'
-                elif curr_close <= mid_point:
+                elif curr_close < (recent_low + (recent_high - recent_low) * 0.214):
                     raw_sig = 'SELL'
 
-            # 🔄 2. INVERSIONE TOTALE (PURE RAW FADE): Entriamo esattamente all'opposto
-            if raw_sig == 'BUY':
-                df_candles.loc[idx, 'signal'] = 'SELL'
-            elif raw_sig == 'SELL':
-                df_candles.loc[idx, 'signal'] = 'BUY'
+            df_candles.loc[idx, 'signal'] = raw_sig
 
     for i in range(len(df_candles)):
         row = df_candles.iloc[i]
@@ -86,7 +98,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
                     hit_sl = (high >= target_sl)
                     hit_tp = (low <= target_tp)
                 
-                # Priorità assoluta SL in caso di doppio tocco
+                # Priorità assoluta SL in caso di doppio tocco nella stessa candela
                 if hit_sl:
                     trade_result = 'SL'
                     pnl = -sl_usd
@@ -115,7 +127,7 @@ def run_detailed_backtest(df_candles, strategy_name, lot_size=1.04, sl_usd=2400.
     df_results = pd.DataFrame(trades)
     
     if verbose and not df_results.empty:
-        print(f"\n📋 ELENCO PUNTUALE TRADE (PURE RAW FADE) -> {strategy_name.upper()}:")
+        print(f"\n📋 ELENCO PUNTUALE TRADE (UNIFIED VOLATILITY STRESS TEST) -> {strategy_name.upper()}:")
         print(df_results.to_string(index=False))
         
     return df_results
