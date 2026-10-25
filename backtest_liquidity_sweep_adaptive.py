@@ -4,7 +4,7 @@ import numpy as np
 def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_usd=2000.0, slippage_limit=2800.0, verbose=True):
     """
     Motore Adattivo - Liquidity Sweep & Volatility Exhaustion (XAU/USD).
-    Ricalcola i range giornalieri precedenti e forza l'esposizione allo Stop Loss.
+    Include il report dettagliato di TP, SL, PnL per singolo trade e controllo slippage.
     """
     trades = []
     pip_value_per_lot = 10.0  
@@ -23,7 +23,6 @@ def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_us
     df_candles['dt'] = pd.to_datetime(df_candles['time'], errors='coerce')
     df_candles['date'] = df_candles['dt'].dt.date
 
-    # Adattività giornaliera: estrazione dinamica dei massimi/minimi del giorno precedente
     df_candles['daily_high_prev'] = df_candles.groupby('date')['high'].transform(lambda x: x.max()).shift(24)
     df_candles['daily_low_prev'] = df_candles.groupby('date')['low'].transform(lambda x: x.min()).shift(24)
 
@@ -71,7 +70,7 @@ def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_us
                 
             trade_result = None
             pnl = 0.0
-            single_breached = False
+            slippage_flag = "OK"
             
             for j in range(i + 1, len(df_candles)):
                 future_candle = df_candles.iloc[j]
@@ -80,7 +79,6 @@ def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_us
                 close_price = future_candle['close']
                 future_dt = future_candle['dt']
                 
-                # Chiusura forzata rigorosa alle 21:45
                 is_same_day = (pd.notna(entry_dt) and pd.notna(future_dt) and entry_dt.date() == future_dt.date())
                 is_cutoff = (pd.notna(future_dt) and (future_dt.hour > 21 or (future_dt.hour == 21 and future_dt.minute >= 45)))
                 
@@ -99,8 +97,8 @@ def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_us
                 if hit_sl:
                     trade_result = 'SL'
                     pnl = -sl_usd
-                    if sl_usd >= slippage_limit:
-                        single_breached = True
+                    if sl_usd > slippage_limit:
+                        slippage_flag = "ALERT: SL > SLIPPAGE LIMIT"
                     break
                 elif hit_tp:
                     trade_result = 'TP'
@@ -112,18 +110,26 @@ def run_adaptive_liquidity_sweep(df_candles, lot_size=1.04, sl_usd=2200.0, tp_us
                 pnl = 0.0
 
             trades.append({
-                'trade_id': len(trades) + 1,
+                'id': len(trades) + 1,
                 'time': entry_time,
                 'type': trade_type,
-                'price': entry_price,
+                'entry': round(entry_price, 2),
+                'TP ($)': tp_usd,
+                'SL ($)': sl_usd,
                 'result': trade_result,
-                'pnl ($)': round(pnl, 2),
-                'single_trade_breached': single_breached
+                'PnL ($)': round(pnl, 2),
+                'slippage_status': slippage_flag
             })
             
     df_results = pd.DataFrame(trades)
-    if verbose and not df_results.empty:
-        print(f"\n📋 RISULTATI ADAPTIVE LIQUIDITY SWEEP:")
-        print(df_results.to_string(index=False))
+    if verbose:
+        print(f"\n==============================================================")
+        print(f"📋 REPORT DETTAGLIATO: ADAPTIVE LIQUIDITY SWEEP")
+        print(f"==============================================================")
+        if df_results.empty:
+            print("Nessun trade generato con i parametri attuali.")
+        else:
+            print(df_results.to_string(index=False))
+        print(f"==============================================================\n")
         
     return df_results
