@@ -30,6 +30,36 @@ def at_or_past_force_close(dt_rome):
     return dt_rome.time() >= config.FORCE_CLOSE
 
 
+# ---------- ritmo dei segnali ----------
+def minutes_of(t):
+    return t.hour * 60 + t.minute
+
+
+def max_relax_level(signals_today, end_minutes):
+    """Quanto possono essere allentati i filtri, in base al ritmo dei segnali.
+
+    0 = strategia selettiva | 1 = filtri allargati | 2 = "quota" (solo trend EMA10/20 + VWAP).
+    Il bot prova sempre prima il livello 0, poi 1, poi 2 fino al massimo consentito qui.
+    end_minutes = minuti dalla mezzanotte italiana a cui CHIUDE la candela del segnale.
+    """
+    base = config.BASE_RELAX_LEVEL
+    target = config.TARGET_SIGNALS_PER_DAY
+    if not target or signals_today >= target:
+        return base
+    start, end = minutes_of(config.SIGNAL_START), minutes_of(config.SIGNAL_END)
+    frac = min(max((end_minutes - start) / (end - start), 0.0), 1.0)
+    behind = target * min(frac / config.PACE_DEADLINE_FRAC, 1.0) - signals_today
+    if frac >= config.QUOTA_FRAC or behind >= 1.5:
+        return 2
+    if behind >= 0.5:
+        return max(base, 1)
+    return base
+
+
+def gap_ok(minutes_since_last):
+    return minutes_since_last is None or minutes_since_last >= config.MIN_SIGNAL_GAP_MIN
+
+
 # ---------- direzioni e livelli ----------
 def opposite(direction):
     return "SELL" if direction == "BUY" else "BUY"

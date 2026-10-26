@@ -110,12 +110,12 @@ def run_trade(ctx, i, loser, entry):
     return None  # i dati finiscono prima dell'esito
 
 
-def simulate(ctx, signals, max_per_day=None):
+def simulate(ctx, signals, max_per_day=None, overlap=False):
     max_per_day = config.MAX_SIGNALS_PER_DAY if max_per_day is None else max_per_day
     trades, last_exit, per_day = [], -1, {}
     for ts, loser, price in signals:
         i = ctx.pos[ts]
-        if i <= last_exit or not ctx.signal_ok(i):
+        if (i <= last_exit and not overlap) or not ctx.signal_ok(i):
             continue
         d = ctx.day[i]
         if max_per_day and per_day.get(d, 0) >= max_per_day:
@@ -176,6 +176,73 @@ def line(label, s):
             f"slippage oltre limite: {s['slip']} | P&L perdente {core.fmt_usd(s['pnl_loser'], True)}")
 
 
+# ---------- vista giornaliera (obiettivo: almeno un SL al giorno) ----------
+def daily_view(ctx, trades):
+    """Giorni di mercato (finestra segnali) in cui lo SL virtuale viene toccato almeno una volta.
+
+    I giorni senza alcun segnale contano come obiettivo mancato.
+    """
+    all_days = {int(ctx.day[i]) for i in range(ctx.n) if ctx.signal_ok(i)}
+    by_day = {}
+    for t in trades:
+        by_day.setdefault(int(ctx.day[t["i"]]), []).append(t)
+    days = len(all_days)
+    hit = sum(1 for ts in by_day.values() if any(t["result"] == "SL" for t in ts))
+    ge = sum(1 for ts in by_day.values() if len(ts) >= config.TARGET_SIGNALS_PER_DAY)
+    n_sig = sum(len(v) for v in by_day.values())
+    real = -sum(t["pnl"] for t in trades) * config.MIRROR_LOT_RATIO
+    lo, hi = wilson(hit, days)
+    return {"days": days, "hit": hit, "rate": hit / days if days else 0.0, "ci": (lo, hi),
+            "real": real, "avg_sig": n_sig / days if days else 0.0, "ge_target": ge}
+
+
+def daily_line(label, d):
+    if d["days"] == 0:
+        return f"{label}: nessun giorno di mercato"
+    return (f"{label}: {d['days']} giorni | SL raggiunto in {d['hit']} "
+            f"({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "
+            f"segnali/giorno {d['avg_sig']:.1f}, giorni con >={config.TARGET_SIGNALS_PER_DAY}: {d['ge_target']} | "
+            f"P&L speculare reale (lotti x{config.MIRROR_LOT_RATIO:g}) {core.fmt_usd(d['real'], True)}")
+
+
+def blind_signals(ctx, step=36, seed=0):
+    """Segnali 'ciechi' (direzione casuale) per un riferimento giornaliero onesto.
+    step=36 candele = uno ogni 3 ore, cioe' circa 4-5 al giorno: stessa quantita' di tentativi."""
+    rng = np.random.default_rng(seed)
+    out = []
+    for i in range(strategy_hedge.MIN_BARS, ctx.n, step):
+        if ctx.signal_ok(i):
+            out.append((ctx.df.index[i], "BUY" if rng.random() < 0.5 else "SELL", ctx.c[i]))
+    return out
+
+
+def paced_signals(ctx, df, params=None, start_i=0):
+    """Replica ESATTA della logica live: ritmo target, livelli di rilassamento, distanza minima, tetto."""
+    frames = [strategy_hedge.level_frame(df, lvl, params) for lvl in (0, 1, 2)]
+    losers = [f["loser"].to_numpy() for f in frames]
+    out, levels, per_day, last_i = [], {}, {}, {}
+    gap_candles = -(-config.MIN_SIGNAL_GAP_MIN // core.CANDLE_MIN)
+    for i in range(max(start_i, strategy_hedge.MIN_BARS), ctx.n):
+        if not ctx.signal_ok(i):
+            continue
+        d = int(ctx.day[i])
+        n = per_day.get(d, 0)
+        if config.MAX_SIGNALS_PER_DAY and n >= config.MAX_SIGNALS_PER_DAY:
+            continue
+        if i - last_i.get(d, -10**9) < gap_candles:
+            continue
+        top = core.max_relax_level(n, int(ctx.mins[i]) + core.CANDLE_MIN)
+        for lvl in range(top + 1):
+            if losers[lvl][i]:
+                ts = df.index[i]
+                out.append((ts, losers[lvl][i], ctx.c[i]))
+                levels[ts] = lvl
+                per_day[d] = n + 1
+                last_i[d] = i
+                break
+    return out, levels
+
+
 # ---------- ottimizzazione ----------
 COMPARE = {
     "trend-pullback": {"mode": "trend", "trigger": "pullback"},
@@ -220,7 +287,8 @@ def optimize(df, ctx, mode="adaptive"):
 
     best = results[0][1]
     test_sigs = [s for s in strategy_hedge.run(df, best) if ctx.pos[s[0]] >= split]
-    test = summarize(simulate(ctx, test_sigs))
+    test_trades = simulate(ctx, test_sigs)
+    test = summarize(test_trades)
     base_test = summarize(baseline(ctx, start_i=split))
     print("\n=== VERIFICA FUORI CAMPIONE (ultimo 30%, mai visto in ottimizzazione) ===")
     print("Parametri scelti:", best)
@@ -250,8 +318,22 @@ def main():
 
     print("\n=== CONFRONTO MODALITA' (parametri di default, tutti i dati) ===")
     for name, over in COMPARE.items():
-        print(line(name, summarize(simulate(ctx, strategy_hedge.run(df, over)))))
+        tr = simulate(ctx, strategy_hedge.run(df, over))
+        print(line(name, summarize(tr)))
+        print("   ", daily_line("obiettivo giornaliero", daily_view(ctx, tr)))
     print(line("ingresso cieco", summarize(baseline(ctx))))
+
+    print("\n=== MODALITA' OPERATIVA: almeno %d segnali/giorno, segnali indipendenti, parametri di default ===" % config.TARGET_SIGNALS_PER_DAY)
+    sigs_p, lv = paced_signals(ctx, df)
+    trades_p = simulate(ctx, sigs_p, overlap=True)
+    print(line("tutti i segnali", summarize(trades_p)))
+    print("   ", daily_line("obiettivo giornaliero", daily_view(ctx, trades_p)))
+    for L, name in strategy_hedge.LEVEL_NAMES.items():
+        sub = [t for t in trades_p if lv.get(ctx.df.index[t["i"]]) == L]
+        print(line(f"  livello {L} ({name})", summarize(sub)))
+    blind_trades = simulate(ctx, blind_signals(ctx), overlap=True)
+    print("   ", daily_line("riferimento cieco (stessi tentativi, direzione a caso)", daily_view(ctx, blind_trades)))
+    print("   Se i segnali non battono il riferimento cieco, la copertura giornaliera dipende solo dal NUMERO di tentativi.")
     print("Soglia teorica ingresso cieco: "
           f"{config.TP_POINTS / (config.TP_POINTS + config.SL_POINTS) * 100:.1f}% SL-first")
 
