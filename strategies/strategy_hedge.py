@@ -64,6 +64,20 @@ DEFAULT_PARAMS = {
 
 MIN_BARS = 300  # sotto questa soglia ATR mediano ed EMA100 non sono affidabili
 
+# Livello 1: stessi indicatori, soglie piu' larghe (entrambi i trigger).
+RELAX1 = {
+    "mode": "adaptive",
+    "body_atr_min": 0.3,
+    "er_trend_min": 0.15,
+    "er_range_max": 0.20,
+    "vwap_dev_k": 1.5,
+    "atr_ratio_min": 0.5,
+    "atr_min": 2.5,
+}
+# Livello 2 ("quota"): solo trend EMA10/EMA20 + lato del VWAP + candela concorde.
+# Serve a garantire il ritmo dei segnali, NON ha alcun vantaggio statistico dimostrato.
+LEVEL_NAMES = {0: "selettivo", 1: "esteso", 2: "quota"}
+
 
 def _merge(params):
     p = dict(DEFAULT_PARAMS)
@@ -160,7 +174,15 @@ def features(df, params=None):
     # ---- scelta del regime ----
     is_trend = er >= p["er_trend_min"]
     is_range = er <= p["er_range_max"]
-    if p["mode"] == "trend":
+    if p["mode"] == "quota":
+        q_common = (
+            (atr >= p["atr_min"]) & (rng <= p["spike_range_atr"] * atr) & (n_sess >= p["min_session_bars"])
+            & pd.Series(np.arange(len(df)) >= MIN_BARS, index=df.index)
+        )
+        buy = q_common & (ema_f > ema_m) & (c > vwap) & (c > o)
+        sell = q_common & (ema_f < ema_m) & (c < vwap) & (c < o)
+        use_trend = pd.Series(True, index=df.index)
+    elif p["mode"] == "trend":
         buy, sell = common & trend_buy, common & trend_sell
         use_trend = pd.Series(True, index=df.index)
     elif p["mode"] == "reversion":
@@ -174,7 +196,7 @@ def features(df, params=None):
     out = pd.DataFrame(index=df.index)
     out["mirror"] = np.where(buy, "BUY", np.where(sell, "SELL", ""))
     out["loser"] = np.where(buy, "SELL", np.where(sell, "BUY", ""))
-    out["regime"] = np.where(use_trend, "TREND", "RANGE")
+    out["regime"] = "QUOTA" if p["mode"] == "quota" else np.where(use_trend, "TREND", "RANGE")
     out["close"] = c
     out["atr"] = atr
     out["rsi"] = rsi
@@ -190,22 +212,41 @@ def run(df, params=None):
     return [(ts, r["loser"], r["close"]) for ts, r in sig.iterrows()]
 
 
-def check_last(df, params=None):
-    """Segnale sull'ULTIMA candela chiusa del dataframe, oppure None."""
+def level_frame(df, level, params=None):
+    """Segnali per livello di rilassamento (0/1/2). Al livello 1 si uniscono i due trigger."""
+    base = dict(params or {})
+    if level == 0:
+        cfgs = [base]
+    elif level == 1:
+        cfgs = [{**base, **RELAX1, "trigger": t} for t in ("pullback", "breakout")]
+    else:
+        cfgs = [{**base, "mode": "quota"}]
+    out = features(df, cfgs[0])
+    for cfg in cfgs[1:]:
+        f = features(df, cfg)
+        mask = (out["loser"] == "") & (f["loser"] != "")
+        out.loc[mask] = f.loc[mask]
+    return out
+
+
+def check_last(df, params=None, relax=0):
+    """Segnale sull'ULTIMA candela chiusa, provando i livelli 0..relax in ordine. None se assente."""
     if df is None or len(df) < MIN_BARS:
         return None
-    f = features(df, params)
-    last = f.iloc[-1]
-    if last["loser"] == "":
-        return None
-    return {
-        "candle_start": f.index[-1],
-        "loser": last["loser"],
-        "mirror": last["mirror"],
-        "regime": last["regime"],
-        "price": float(last["close"]),
-        "atr": float(last["atr"]),
-        "rsi": float(last["rsi"]),
-        "er": float(last["er"]),
-        "vwap": float(last["vwap"]),
-    }
+    for level in range(relax + 1):
+        f = level_frame(df, level, params)
+        last = f.iloc[-1]
+        if last["loser"] != "":
+            return {
+                "candle_start": f.index[-1],
+                "loser": last["loser"],
+                "mirror": last["mirror"],
+                "regime": last["regime"],
+                "relax": level,
+                "price": float(last["close"]),
+                "atr": float(last["atr"]),
+                "rsi": float(last["rsi"]),
+                "er": float(last["er"]),
+                "vwap": float(last["vwap"]),
+            }
+    return None
