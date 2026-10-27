@@ -84,6 +84,7 @@ class Ctx:
         self.l = df["low"].to_numpy()
         self.c = df["close"].to_numpy()
         self.day = (rome.year * 10000 + rome.month * 100 + rome.day).to_numpy()
+        self.wd = rome.weekday.to_numpy()   # 0=lunedi ... 6=domenica (il live non lavora sab/dom)
         self.mins = (rome.hour * 60 + rome.minute).to_numpy()
         self.n = len(df)
         self.pos = {ts: i for i, ts in enumerate(df.index)}
@@ -93,7 +94,7 @@ class Ctx:
 
     def signal_ok(self, i):
         end_m = self.mins[i] + core.CANDLE_MIN  # la candela chiude 5 minuti dopo l'inizio
-        return self.start_m <= end_m < self.end_m
+        return self.wd[i] < 5 and self.start_m <= end_m < self.end_m
 
 
 def run_trade(ctx, i, loser, entry):
