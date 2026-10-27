@@ -84,7 +84,7 @@ class Ctx:
         self.l = df["low"].to_numpy()
         self.c = df["close"].to_numpy()
         self.day = (rome.year * 10000 + rome.month * 100 + rome.day).to_numpy()
-        self.wd = rome.weekday.to_numpy()   # 0=lunedi ... 6=domenica (il live non lavora sab/dom)
+        self.wd = rome.dayofweek.to_numpy()   # 0=lunedi ... 6=domenica (il live non lavora sab/dom)
         self.mins = (rome.hour * 60 + rome.minute).to_numpy()
         self.n = len(df)
         self.pos = {ts: i for i, ts in enumerate(df.index)}
@@ -244,6 +244,44 @@ def paced_signals(ctx, df, params=None, start_i=0):
     return out, levels
 
 
+# ---------- varianti operative ----------
+def max_open(trades):
+    ev = sorted([(t["i"], 1) for t in trades] + [(t["exit_i"], -1) for t in trades])
+    cur = best = 0
+    for _, delta in ev:
+        cur += delta
+        best = max(best, cur)
+    return best
+
+
+def run_variant(ctx, df, label, overrides, opposite=False):
+    """Cambia solo parametri di ESECUZIONE (non gli indicatori) e rilegge il risultato giornaliero."""
+    saved = {k: getattr(config, k) for k in overrides}
+    for k, v in overrides.items():
+        setattr(config, k, v)
+    try:
+        sg, _ = paced_signals(ctx, df)
+        if opposite:  # per ogni segnale apre anche la direzione opposta nello stesso istante
+            sg = sg + [(ts, core.opposite(loser), price) for ts, loser, price in sg]
+        tr = simulate(ctx, sg, overlap=True, max_per_day=0 if opposite else None)
+    finally:
+        for k, v in saved.items():
+            setattr(config, k, v)
+    d, sm = daily_view(ctx, tr), summarize(tr)
+    print(f"   {label}: SL in {d['hit']}/{d['days']} giorni ({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "
+          f"{d['avg_sig']:.1f} trade/giorno | max aperti insieme {max_open(tr)} | TP/giorno {sm['TP']/max(d['days'],1):.1f} | "
+          f"P&L speculare reale {core.fmt_usd(d['real'], True)}")
+
+
+VARIANTS = [
+    ("attuale (base 0, target 4, tetto 8, distanza 20')", {}, False),
+    ("piu' tentativi (base 1, 8, 20, 10')", dict(BASE_RELAX_LEVEL=1, TARGET_SIGNALS_PER_DAY=8, MAX_SIGNALS_PER_DAY=20, MIN_SIGNAL_GAP_MIN=10), False),
+    ("distanziati 60' (base 1, 4, 8)", dict(BASE_RELAX_LEVEL=1, MIN_SIGNAL_GAP_MIN=60), False),
+    ("distanziati 120' (base 1, 4, 6)", dict(BASE_RELAX_LEVEL=1, MAX_SIGNALS_PER_DAY=6, MIN_SIGNAL_GAP_MIN=120), False),
+    ("coppie opposte (come attuale, ogni segnale + il contrario)", {}, True),
+]
+
+
 # ---------- ottimizzazione ----------
 COMPARE = {
     "trend-pullback": {"mode": "trend", "trigger": "pullback"},
@@ -335,6 +373,11 @@ def main():
     blind_trades = simulate(ctx, blind_signals(ctx), overlap=True)
     print("   ", daily_line("riferimento cieco (stessi tentativi, direzione a caso)", daily_view(ctx, blind_trades)))
     print("   Se i segnali non battono il riferimento cieco, la copertura giornaliera dipende solo dal NUMERO di tentativi.")
+
+    print("\n=== VARIANTI OPERATIVE (cambia solo l'esecuzione, gli indicatori restano quelli di default) ===")
+    for label, over, opp in VARIANTS:
+        run_variant(ctx, df, label, over, opp)
+    print("   Sono poche varianti su pochi giorni: differenze di pochi punti sono rumore. Conta solo se l'intervallo sale chiaramente.")
     print("Soglia teorica ingresso cieco: "
           f"{config.TP_POINTS / (config.TP_POINTS + config.SL_POINTS) * 100:.1f}% SL-first")
 
