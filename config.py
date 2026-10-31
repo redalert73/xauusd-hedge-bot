@@ -66,15 +66,17 @@ SINGLE_POSITION = True
 # Se non confermi entro CONFIRM_TIMEOUT_MIN minuti il segnale scade, non conta e puo' arrivarne un altro.
 REQUIRE_CONFIRMATION = True
 CONFIRM_TIMEOUT_MIN = 10
-STOP_AFTER_EXECUTION = True   # dopo il primo segnale eseguito (confermato) niente altro per quel giorno
+STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altro per quel giorno.
+#   False = "riprova dopo un TP": dopo un TP (o chiusura senza esito) puo' arrivare un nuovo segnale; dopo lo SL si ferma.
+#   Backtest (255 giorni): 2 tentativi con BASE_RELAX_LEVEL=1, TARGET=2, MAX=2, GAP=10 -> SL in ~64% dei giorni; 3 tentativi -> ~69%.
 # Preset (validi solo con SINGLE_POSITION = False) (BASE_RELAX_LEVEL / TARGET / MAX / GAP):
 #   qualita' prima  : 0 /  4 /  8 / 20   <- attuale: pochi segnali, i migliori per primi
 #   piu' tentativi  : 1 /  8 / 20 / 10   (~10 segnali/giorno, ~10 posizioni aperte insieme)
 #   massimo         : 1 / 12 / 30 /  5   (~15 segnali/giorno: poco in piu' sui giorni con SL)
-BASE_RELAX_LEVEL = 0          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
-TARGET_SIGNALS_PER_DAY = 1    # con posizione singola: entro il 60% della finestra il bot allenta i filtri finche' non esce il primo segnale
-MAX_SIGNALS_PER_DAY = 4       # proposte al giorno: servono solo se non riesci a eseguire in tempo il primo
-MIN_SIGNAL_GAP_MIN = 20       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
+BASE_RELAX_LEVEL = 1          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
+TARGET_SIGNALS_PER_DAY = 2    # il bot allenta i filtri man mano che passa il tempo finche' non arrivano questi segnali
+MAX_SIGNALS_PER_DAY = 2       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
+MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
 MAX_SIGNAL_AGE_MIN = 10       # scarta il segnale se la candela e' piu' vecchia di cosi'

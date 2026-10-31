@@ -181,11 +181,14 @@ def manage_positions(st, df, now_rome):
                     txt = (f"OBIETTIVO RAGGIUNTO sul segnale delle {label}: SL toccato sul perdente "
                            f"({core.fmt_usd(-config.SL_USD, True)}).\n"
                            f"Lo speculare e' in TP ({core.fmt_usd(config.SL_USD * r, True)}): chiudi entrambe se non gia' fatto.\n")
+                    st["done_today"] = True      # obiettivo del giorno raggiunto: basta, comunque sia impostato il resto
                     txt += "Per oggi hai finito: nessun altro segnale."
                 elif outcome == "TP":
                     txt = (f"ESITO DA EVITARE sul segnale delle {label}: TP toccato sul perdente "
                            f"({core.fmt_usd(config.TP_USD, True)}).\n"
-                           f"Lo speculare e' in SL ({core.fmt_usd(-config.TP_USD * r, True)}): chiudi entrambe se non gia' fatto.")
+                           f"Lo speculare e' in SL ({core.fmt_usd(-config.TP_USD * r, True)}): chiudi entrambe se non gia' fatto.\n"
+                           + ("Per oggi hai finito: nessun altro segnale." if config.STOP_AFTER_EXECUTION
+                              else "Cerco un nuovo segnale se c'e' ancora tempo (max " f"{config.MAX_SIGNALS_PER_DAY} al giorno)."))
                 else:
                     txt = (f"Segnale delle {label}: SL e TP toccati nella stessa candela M5, ordine non ricostruibile.\n"
                            "Controlla sul broker come si sono chiuse le due gambe.")
