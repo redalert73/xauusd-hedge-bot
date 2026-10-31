@@ -29,7 +29,7 @@ def build(df, ctx):
     c, h, l, o = df["close"], df["high"], df["low"], df["open"]
     tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
     atr = tr.ewm(alpha=1 / 14, adjust=False).mean()
-    ema10, ema20, ema100 = (c.ewm(span=s, adjust=False).mean() for s in (10, 20, 100))
+    ema10, ema20, ema100 = (c.ewm(span=p[k], adjust=False).mean() for k in ("ema_fast", "ema_mid", "ema_trend"))
     vwap, _ = strategy_hedge.session_vwap(df, p)
     er = strategy_hedge.efficiency_ratio(c, 48)
     d = c.diff()
@@ -62,8 +62,8 @@ def build(df, ctx):
     F["distanza dal minimo di oggi (in ATR)"] = (c - day_lo) / atr
     F["distanza dal numero tondo 50 (in ATR, con segno)"] = (c - round50) / atr
     F["ora"] = (ctx.mins // 120) * 2                       # blocchi da 2 ore (ora italiana)
-    F["trend EMA10-EMA20 (in ATR)"] = (ema10 - ema20) / atr
-    F["prezzo vs EMA100 (in ATR)"] = (c - ema100) / atr
+    F["trend EMA veloce-media (in ATR)"] = (ema10 - ema20) / atr
+    F["prezzo vs EMA lenta (in ATR)"] = (c - ema100) / atr
     F["prezzo vs VWAP (in ATR)"] = (c - vwap) / atr
     F["rendimento 6 candele (in ATR)"] = (c - c.shift(6)) / atr
     F["rendimento 24 candele (in ATR)"] = (c - c.shift(24)) / atr

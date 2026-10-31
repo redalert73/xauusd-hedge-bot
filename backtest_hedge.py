@@ -317,6 +317,8 @@ SEQ_VARIANTS = [
     ("ultimo segnale alle 20:00 (nessun limite)", dict(LAST_SIGNAL_TIME=time(20, 0))),
     ("WHAT-IF: 2 tentativi (il secondo solo dopo un TP)", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=2)),
     ("WHAT-IF: 3 tentativi (il successivo solo dopo un TP)", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=3)),
+    ("WHAT-IF: 2 tentativi, filtri allargati, distanza 10'", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=2, BASE_RELAX_LEVEL=1, TARGET_SIGNALS_PER_DAY=2, MIN_SIGNAL_GAP_MIN=10)),
+    ("WHAT-IF: 3 tentativi, filtri allargati, distanza 10'", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=3, BASE_RELAX_LEVEL=1, TARGET_SIGNALS_PER_DAY=3, MIN_SIGNAL_GAP_MIN=10)),
 ]
 
 
@@ -442,6 +444,17 @@ def main():
     for label, over in SEQ_VARIANTS:
         run_sequential(ctx, df, label, over)
     run_sequential(ctx, df, "riferimento cieco (direzione a caso)", dict(), blind=True)
+
+    print("\n=== CONFRONTO EMA (un trade al giorno, resto come config attuale) ===")
+    for name, emas in (("EMA 10/20/100", (10, 20, 100)), ("EMA 9/20/200 (attuale)", (9, 20, 200))):
+        prm = {"ema_fast": emas[0], "ema_mid": emas[1], "ema_trend": emas[2]}
+        tr = sequential_trades(ctx, df, params=prm)
+        d, sm = daily_view(ctx, tr), summarize(tr)
+        first_sl = sum(1 for t in tr if t["n"] == 1 and t["result"] == "SL")
+        print(f"   {name}: SL in {d['hit']}/{d['days']} giorni ({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "
+              f"{d['avg_sig']:.1f} trade/giorno | SL-first sui trade {sm['SL']}/{max(len(tr),1)} | TP/giorno {sm['TP']/max(d['days'],1):.1f}")
+        tr_all = simulate(ctx, strategy_hedge.run(df, prm))
+        print("     ", line("tutti i segnali del livello selettivo", summarize(tr_all)))
     print("   Poche giornate: differenze di pochi punti sono rumore. Se i segnali non battono il riferimento cieco, il vantaggio e' solo il numero di tentativi.")
     print("Soglia teorica ingresso cieco: "
           f"{config.TP_POINTS / (config.TP_POINTS + config.SL_POINTS) * 100:.1f}% SL-first")
