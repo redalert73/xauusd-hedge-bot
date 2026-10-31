@@ -1,0 +1,28 @@
+name: Edge Scan (cerca un vantaggio reale)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Pagine da 5000 candele M5 (circa 17 giorni di mercato ciascuna)"
+        default: "6"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Run edge scan
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python edge_scan.py --pages ${{ inputs.pages }} | tee edge_scan_report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edge-scan-report
+          path: edge_scan_report.txt

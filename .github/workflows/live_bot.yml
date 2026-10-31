@@ -1,0 +1,55 @@
+name: Live Trading Bot
+
+on:
+  schedule:
+    # Ogni 5 minuti, lun-ven. Le ore sono UTC e coprono 06:00-21:45 italiane sia in
+    # ora legale (UTC+2) sia solare (UTC+1): il filtro esatto lo fa lo script con
+    # il fuso Europe/Rome. Fuori orario lo script esce subito.
+    - cron: '*/5 4-20 * * 1-5'
+  workflow_dispatch:
+
+# Un'esecuzione alla volta: evita doppi segnali se una run slitta.
+concurrency:
+  group: live-bot
+  cancel-in-progress: false
+
+jobs:
+  run-live-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Lo stato (posizione aperta, contatori giornalieri) vive nella cache di
+      # Actions, non nel repository: niente commit ogni 5 minuti e nessun dato
+      # operativo pubblicato.
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/xauusd_state.json
+          key: bot-state-${{ github.run_id }}
+          restore-keys: bot-state-
+
+      - name: Run bot
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python live_bot.py
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state/xauusd_state.json
+          key: bot-state-${{ github.run_id }}-${{ github.run_attempt }}
