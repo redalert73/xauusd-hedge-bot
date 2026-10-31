@@ -26,6 +26,14 @@ def in_signal_window(dt_rome):
     return config.SIGNAL_START <= t < config.SIGNAL_END
 
 
+def signal_allowed(candle_end_rome):
+    """Finestra segnali (06:00-20:00) E prima di LAST_SIGNAL_TIME (la candela deve chiudere entro quell'ora)."""
+    last = getattr(config, "LAST_SIGNAL_TIME", None)
+    if last is not None and candle_end_rome.time() > last:
+        return False
+    return in_signal_window(candle_end_rome)
+
+
 def at_or_past_force_close(dt_rome):
     return dt_rome.time() >= config.FORCE_CLOSE
 

@@ -226,7 +226,7 @@ def maybe_new_signal(st, df, now_rome):
     age_min = (now_rome - end_rome).total_seconds() / 60
     if age_min > config.MAX_SIGNAL_AGE_MIN or age_min < -1:
         return  # dati non freschi (mercato chiuso o ritardo): troppo tardi per entrare
-    if not core.in_signal_window(end_rome) or not core.in_signal_window(now_rome):
+    if not core.signal_allowed(end_rome) or not core.signal_allowed(now_rome):
         return
     if st["last_signal_candle"] == str(last_start):
         return

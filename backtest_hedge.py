@@ -14,6 +14,7 @@
 # non chiaramente sopra questa soglia, fuori campione, NON e' un vantaggio.
 
 import argparse
+from datetime import time
 import itertools
 import math
 import os
@@ -258,6 +259,9 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
     for i in range(max(0, strategy_hedge.MIN_BARS), ctx.n):
         if i < busy_until or not ctx.signal_ok(i):
             continue
+        last = getattr(config, "LAST_SIGNAL_TIME", None)
+        if last is not None and ctx.mins[i] + core.CANDLE_MIN > last.hour * 60 + last.minute:
+            continue
         d = int(ctx.day[i])
         n = per_day.get(d, 0)
         if d in done or (config.MAX_SIGNALS_PER_DAY and n >= config.MAX_SIGNALS_PER_DAY):
@@ -283,8 +287,8 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
         busy_until = t["exit_i"]
         t["n"] = n + 1
         trades.append(t)
-        if config.STOP_AFTER_EXECUTION:
-            done.add(d)  # primo trade eseguito: per quel giorno basta, qualunque esito
+        if config.STOP_AFTER_EXECUTION or t["result"] == "SL":
+            done.add(d)  # regola attuale: primo trade eseguito e basta. Con STOP_AFTER_EXECUTION=False (solo what-if): stop dopo lo SL, nuovo tentativo dopo TP/chiusura
     return trades
 
 
@@ -306,9 +310,13 @@ def run_sequential(ctx, df, label, overrides, blind=False):
 
 
 SEQ_VARIANTS = [
-    ("filtri selettivi (base 0, attuale)", {}),
+    ("config attuale (filtri selettivi, ultimo segnale 15:00)", {}),
     ("filtri allargati (base 1)", dict(BASE_RELAX_LEVEL=1)),
-    ("filtri allargati, distanza 60'", dict(BASE_RELAX_LEVEL=1, MIN_SIGNAL_GAP_MIN=60)),
+    ("ultimo segnale alle 14:00", dict(LAST_SIGNAL_TIME=time(14, 0))),
+    ("ultimo segnale alle 16:00", dict(LAST_SIGNAL_TIME=time(16, 0))),
+    ("ultimo segnale alle 20:00 (nessun limite)", dict(LAST_SIGNAL_TIME=time(20, 0))),
+    ("WHAT-IF: 2 tentativi (il secondo solo dopo un TP)", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=2)),
+    ("WHAT-IF: 3 tentativi (il successivo solo dopo un TP)", dict(STOP_AFTER_EXECUTION=False, MAX_SIGNALS_PER_DAY=3)),
 ]
 
 

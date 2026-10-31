@@ -45,6 +45,7 @@ TIMEZONE = "Europe/Rome"
 SIGNAL_START = time(6, 0)     # primo segnale inviabile
 SIGNAL_END = time(20, 0)      # nessun nuovo segnale da questo orario
 FORCE_CLOSE = time(21, 45)    # chiusura automatica di tutte le posizioni
+LAST_SIGNAL_TIME = time(15, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
 
 # --- Fasce a liquidita' ridotta ---
 # In queste fasce (ora italiana) il mercato e' piu' lento: spesso ne' SL ne' TP vengono toccati.
@@ -52,7 +53,7 @@ FORCE_CLOSE = time(21, 45)    # chiusura automatica di tutte le posizioni
 # mediana degli ultimi 3 giorni (0 = filtro spento). Le fasce giuste vanno scelte con la tabella per ora
 # di edge_scan.py, che stampa anche la riga pronta da incollare qui.
 # Candidate tipiche dell'oro: 06:00-09:00 (Asia), 12:00-14:00 (pausa pranzo), 18:00-20:00 (sera).
-LOW_LIQUIDITY_WINDOWS = [(time(18, 0), time(20, 0))]
+LOW_LIQUIDITY_WINDOWS = []   # ora vuota: dopo LAST_SIGNAL_TIME non ci sono comunque segnali. Esempio: [(time(12, 0), time(14, 0))]
 LOW_LIQUIDITY_ATR_RATIO = 1.0
 
 # --- Gestione segnali ---
