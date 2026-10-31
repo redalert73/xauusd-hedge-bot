@@ -1,5 +1,5 @@
 # ==========================================
-# STRATEGIA HEDGE ADATTIVA - EMA 10/20/100 + VWAP + REGIME (M5)
+# STRATEGIA HEDGE ADATTIVA - EMA 9/20/200 + VWAP + REGIME (M5)
 # ==========================================
 # La gamba SPECULARE e' quella che deve muoversi di 21.15 punti prima di
 # tornare indietro di 19.23; la gamba PERDENTE e' sempre l'opposto.
@@ -18,13 +18,13 @@
 #     in quel caso e' la media di prezzo della sessione, non un VWAP vero.
 #
 # TREND (mirror in direzione del trend):
-#   EMA10 > EMA20 > EMA100 e prezzo sopra VWAP (specchiato per SELL), RSI sano,
-#   non troppo esteso dalla EMA10, e un trigger a scelta:
-#     "pullback"  : chiusura che riprende la EMA10 dopo un ritracciamento
+#   EMA9 > EMA20 > EMA200 e prezzo sopra VWAP (specchiato per SELL), RSI sano,
+#   non troppo esteso dalla EMA9, e un trigger a scelta:
+#     "pullback"  : chiusura che riprende la EMA9 dopo un ritracciamento
 #                   rimasto sopra la EMA20
 #     "breakout"  : rottura del massimo delle ultime N candele con candela decisa
 # RANGE (mirror contro l'eccesso):
-#   prezzo a >= k ATR dal VWAP, RSI estremo, candela di rientro, EMA100 piatta.
+#   prezzo a >= k ATR dal VWAP, RSI estremo, candela di rientro, EMA200 piatta.
 #
 # I parametri sono un PUNTO DI PARTENZA: vanno verificati con
 # backtest_hedge.py su dati reali prima di fidarsi.
@@ -37,9 +37,9 @@ import config
 DEFAULT_PARAMS = {
     "mode": "adaptive",        # "trend" | "reversion" | "adaptive"
     "trigger": "pullback",     # "pullback" | "breakout" (solo per la parte trend)
-    "ema_fast": 10,
+    "ema_fast": 9,
     "ema_mid": 20,
-    "ema_trend": 100,
+    "ema_trend": 200,
     "atr_period": 14,
     "rsi_period": 14,
     "er_period": 48,
@@ -59,10 +59,10 @@ DEFAULT_PARAMS = {
     "atr_median_bars": 864,    # 3 giorni di candele M5
     "max_extension_atr": 1.5,
     "spike_range_atr": 3.0,
-    "ema100_flat_atr": 0.5,    # pendenza massima EMA100 su 12 candele, in ATR (range)
+    "ema100_flat_atr": 0.5,    # pendenza massima EMA lenta su 12 candele, in ATR (range)
 }
 
-MIN_BARS = 300  # sotto questa soglia ATR mediano ed EMA100 non sono affidabili
+MIN_BARS = 300  # sotto questa soglia ATR mediano ed EMA200 non sono affidabili
 
 # Livello 1: stessi indicatori, soglie piu' larghe (entrambi i trigger).
 RELAX1 = {
@@ -74,7 +74,7 @@ RELAX1 = {
     "atr_ratio_min": 0.5,
     "atr_min": 2.5,
 }
-# Livello 2 ("quota"): solo trend EMA10/EMA20 + lato del VWAP + candela concorde.
+# Livello 2 ("quota"): solo trend EMA9/EMA20 + lato del VWAP + candela concorde.
 # Serve a garantire il ritmo dei segnali, NON ha alcun vantaggio statistico dimostrato.
 LEVEL_NAMES = {0: "selettivo", 1: "esteso", 2: "quota"}
 
