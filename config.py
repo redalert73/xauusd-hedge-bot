@@ -35,11 +35,11 @@ MIRROR_LOT_RATIO = MIRROR_LOT / LOT_SIZE  # ~0.106: usato per i P&L in dollari
 # Perdita cumulata minima del giorno (somma degli SL toccati). 0 = spento (vale solo "almeno uno SL da SL_USD").
 # Con 2.500$ un solo SL da 2.200$ non basta: dopo il primo SL il bot manda un segnale di COMPLETAMENTO
 # con SL = quanto manca (minimo MIN_COMPLETION_SL_USD). Si ferma quando la somma degli SL arriva a questo valore.
-DAILY_LOSS_TARGET_USD = 2500.0
+DAILY_LOSS_TARGET_USD = 2000.0
 MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifica lo "Stops level" di XAUUSD su MT5)
 
 # --- Livelli di rischio (broker PERDENTE) ---
-SL_USD = 2200.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
+SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
 TP_USD = 2000.0           # esito da evitare
 SLIPPAGE_MAX_USD = 2600.0 # perdita massima da non raggiungere mai
 
@@ -80,9 +80,9 @@ STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altr
 #   qualita' prima  : 0 /  4 /  8 / 20   <- attuale: pochi segnali, i migliori per primi
 #   piu' tentativi  : 1 /  8 / 20 / 10   (~10 segnali/giorno, ~10 posizioni aperte insieme)
 #   massimo         : 1 / 12 / 30 /  5   (~15 segnali/giorno: poco in piu' sui giorni con SL)
-BASE_RELAX_LEVEL = 1          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
+BASE_RELAX_LEVEL = 2          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
 TARGET_SIGNALS_PER_DAY = 2    # il bot allenta i filtri man mano che passa il tempo finche' non arrivano questi segnali
-MAX_SIGNALS_PER_DAY = 4       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
+MAX_SIGNALS_PER_DAY = 3       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
 MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
