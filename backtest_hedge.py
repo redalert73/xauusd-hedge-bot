@@ -445,6 +445,13 @@ def main():
         run_sequential(ctx, df, label, over)
     run_sequential(ctx, df, "riferimento cieco (direzione a caso)", dict(), blind=True)
 
+    print("\n=== SENSIBILITA' ALLO SL (un trade al giorno, TP e resto invariati): cosa cambia se lo SL e' piu' vicino ===")
+    for sl in (2200, 2000, 1800, 1500):
+        pts = sl / config.USD_PER_POINT
+        theo = config.TP_POINTS / (config.TP_POINTS + pts) * 100
+        run_sequential(ctx, df, f"SL {sl}$ ({pts:.2f} pt, teorico a caso {theo:.1f}%, margine su slippage {(config.SLIPPAGE_POINTS - pts):.2f} pt)",
+                       dict(SL_USD=float(sl), SL_POINTS=pts))
+
     print("\n=== CONFRONTO EMA (un trade al giorno, resto come config attuale) ===")
     for name, emas in (("EMA 10/20/100", (10, 20, 100)), ("EMA 9/20/200 (attuale)", (9, 20, 200))):
         prm = {"ema_fast": emas[0], "ema_mid": emas[1], "ema_trend": emas[2]}
