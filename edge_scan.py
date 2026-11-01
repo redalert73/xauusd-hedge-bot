@@ -163,6 +163,22 @@ def public_rules(df, ctx):
             (pd.Series(np.where((ema50 > ema200) & calm & bull & (c > ema50), "BUY",
                                 np.where((ema50 < ema200) & calm & bear & (c < ema50), "SELL", "")), index=df.index)),
     }
+    # ---- Mark Minervini: Trend Template e VCP adattati all'oro M5 (volume e forza relativa non ci sono: restano trend, vicinanza ai massimi, contrazione) ----
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / 14, adjust=False).mean()
+    ema150 = c.ewm(span=150, adjust=False).mean()
+    hi12, lo12 = h.shift(1).rolling(12).max(), l.shift(1).rolling(12).min()          # "pivot" delle ultime 12 candele (1 ora)
+    day_hi, day_lo = h.rolling(288).max(), l.rolling(288).min()                      # circa 1 giorno
+    up_tt = (c > ema50) & (ema50 > ema150) & (ema150 > ema200) & (ema200 > ema200.shift(48)) & ((day_hi - c) <= 1.5 * atr)
+    dn_tt = (c < ema50) & (ema50 < ema150) & (ema150 < ema200) & (ema200 < ema200.shift(48)) & ((c - day_lo) <= 1.5 * atr)
+    rules["C. Trend Template (EMA50>150>200 in salita, vicino ai massimi del giorno) + rottura del pivot di 1 ora"] = pd.Series(
+        np.where(up_tt & (c > hi12) & (c > o), "BUY", np.where(dn_tt & (c < lo12) & (c < o), "SELL", "")), index=df.index)
+    r1 = h.rolling(12).max() - l.rolling(12).min()
+    shrink = (r1 < r1.shift(12)) & (r1.shift(12) < r1.shift(24))                      # tre contrazioni successive (VCP)
+    rules["D. VCP: tre contrazioni di range di fila in trend (EMA50 vs EMA200) + rottura del pivot"] = pd.Series(
+        np.where(shrink & (ema50 > ema200) & (c > hi12) & (c > o), "BUY",
+                 np.where(shrink & (ema50 < ema200) & (c < lo12) & (c < o), "SELL", "")), index=df.index)
+
     # B. "tre ore ribassiste prima dell'ora di controllo" -> rimbalzo (mean reversion), ora di controllo 15 o 16 italiane
     rome = df.index.tz_localize("UTC").tz_convert(config.TIMEZONE)
     hour_key = pd.Series(rome.strftime("%Y%m%d%H"), index=df.index)
