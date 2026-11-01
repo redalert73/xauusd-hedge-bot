@@ -139,7 +139,7 @@ def signal_message(sig, loser, mirror, when_rome, sl_usd=None, loss_today=0.0):
         + (f"Obiettivo giornaliero: {core.fmt_usd(loss_today)} fatti su {core.fmt_usd(config.DAILY_LOSS_TARGET_USD)}\n\n" if config.DAILY_LOSS_TARGET_USD else "")
         + f"Chiusura automatica: {config.FORCE_CLOSE:%H:%M} | Segnale n. {{n}} di oggi"
         + ("\nPosizione unica: non ne apro altre finche' non ti scrivo l'esito." if config.SINGLE_POSITION else "")
-        + (f"\nSe lo apri, scrivi /eseguito entro {config.CONFIRM_TIMEOUT_MIN} minuti: solo allora lo seguo." if config.REQUIRE_CONFIRMATION else "")
+        + (f"\nSe lo apri, premi Eseguito (o scrivi /eseguito) entro {config.CONFIRM_TIMEOUT_MIN} minuti: solo allora lo seguo." if config.REQUIRE_CONFIRMATION else "")
     )
 
 

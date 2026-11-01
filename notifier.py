@@ -7,6 +7,21 @@ import requests
 
 TIMEOUT = 10
 
+# Tastiera fissa in basso: ogni pulsante invia un comando al bot.
+BUTTONS = {
+    "✅ Eseguito": "/eseguito",
+    "📊 Stato": "/stato",
+    "⏸ Pausa": "/pausa",
+    "▶️ Riprendi": "/riprendi",
+    "🏁 Fatto": "/fatto",
+}
+_KEYBOARD = {
+    "keyboard": [["✅ Eseguito", "📊 Stato"], ["⏸ Pausa", "▶️ Riprendi"], ["🏁 Fatto"]],
+    "resize_keyboard": True,
+    "is_persistent": True,
+}
+_INLINE_EXEC = {"inline_keyboard": [[{"text": "✅ Eseguito", "callback_data": "/eseguito"}]]}
+
 
 def _creds():
     return os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
@@ -19,9 +34,11 @@ def send_notification(message: str) -> bool:
         print("Telegram non configurato (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
         return False
     try:
+        # Sui segnali da confermare compare il pulsante "Eseguito" sotto il messaggio.
+        markup = _INLINE_EXEC if "/eseguito entro" in message or "premi Eseguito" in message else _KEYBOARD
         r = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": message},
+            json={"chat_id": chat_id, "text": message, "reply_markup": markup},
             timeout=TIMEOUT,
         )
         if not r.ok:
@@ -59,10 +76,24 @@ def fetch_commands(offset: int):
     commands, new_offset = [], offset
     for upd in data.get("result", []):
         new_offset = max(new_offset, upd["update_id"] + 1)
+        cb = upd.get("callback_query")
+        if cb:                                   # pulsante sotto il messaggio
+            cmsg = cb.get("message") or {}
+            if str((cmsg.get("chat") or {}).get("id")) == str(chat_id):
+                cdata = (cb.get("data") or "").strip().lower()
+                if cdata.startswith("/"):
+                    commands.append(cdata)
+                try:
+                    requests.post(f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+                                  json={"callback_query_id": cb.get("id"), "text": "Ricevuto"}, timeout=TIMEOUT)
+                except requests.RequestException:
+                    pass
+            continue
         msg = upd.get("message") or {}
         if str((msg.get("chat") or {}).get("id")) != str(chat_id):
             continue
-        text = (msg.get("text") or "").strip().lower()
+        raw = (msg.get("text") or "").strip()
+        text = BUTTONS.get(raw, raw).lower()      # tasti della tastiera fissa -> comando
         if text.startswith("/"):
             commands.append(text.split()[0].split("@")[0])
     return commands, new_offset
