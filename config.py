@@ -24,8 +24,8 @@ OZ_PER_LOT = 100                          # 1 lotto standard XAU = 100 once
 USD_PER_POINT = LOT_SIZE * OZ_PER_LOT     # 104$ per ogni 1.00 di prezzo
 
 # --- Broker SPECULARE (conto reale) ---
-MIRROR_LOT_RATIO = 0.1                    # lotti speculare / lotti perdente (1 a 10): VERIFICA
-MIRROR_LOT = round(LOT_SIZE * MIRROR_LOT_RATIO, 3)   # 0.104 lotti
+MIRROR_LOT = 0.11                        # lotti del broker reale (speculare)
+MIRROR_LOT_RATIO = MIRROR_LOT / LOT_SIZE  # ~0.106: usato per i P&L in dollari
 
 # --- Obiettivo giornaliero ---
 # Sul conto virtuale serve almeno UNO SL al giorno. Il bot non sa quali segnali
@@ -52,7 +52,7 @@ TIMEZONE = "Europe/Rome"
 SIGNAL_START = time(6, 0)     # primo segnale inviabile
 SIGNAL_END = time(20, 0)      # nessun nuovo segnale da questo orario
 FORCE_CLOSE = time(21, 45)    # chiusura automatica di tutte le posizioni
-LAST_SIGNAL_TIME = time(15, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
+LAST_SIGNAL_TIME = time(16, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
 
 # --- Fasce a liquidita' ridotta ---
 # In queste fasce (ora italiana) il mercato e' piu' lento: spesso ne' SL ne' TP vengono toccati.
