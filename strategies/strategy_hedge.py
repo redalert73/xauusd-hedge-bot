@@ -269,3 +269,29 @@ def check_last(df, params=None, relax=0):
                 "vwap": float(last["vwap"]),
             }
     return None
+
+
+def fallback_signal(df, params=None):
+    """Segnale di COMPLETAMENTO: l'SL e' cosi' vicino che conta soprattutto la rapidita'. Direzione dal trend (EMA veloce vs media)
+    sull'ultima candela chiusa, senza aspettare trigger. None se non ci sono abbastanza dati."""
+    if df is None or len(df) < MIN_BARS:
+        return None
+    p = _merge(params)
+    f = features(df, {**(params or {}), "mode": "quota"})
+    c = df["close"]
+    ema_f = c.ewm(span=p["ema_fast"], adjust=False).mean().iloc[-1]
+    ema_m = c.ewm(span=p["ema_mid"], adjust=False).mean().iloc[-1]
+    mirror = "BUY" if ema_f >= ema_m else "SELL"
+    last = f.iloc[-1]
+    return {
+        "candle_start": f.index[-1],
+        "loser": "SELL" if mirror == "BUY" else "BUY",
+        "mirror": mirror,
+        "regime": "COMPLETAMENTO",
+        "relax": 2,
+        "price": float(last["close"]),
+        "atr": float(last["atr"]),
+        "rsi": float(last["rsi"]),
+        "er": float(last["er"]),
+        "vwap": float(last["vwap"]),
+    }
