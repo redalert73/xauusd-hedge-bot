@@ -39,6 +39,7 @@ def new_state(day):
         "paused": False,
         "done_today": False,       # /fatto: hai gia' toccato lo SL, niente altri segnali oggi
         "positions": [],           # segnali ancora aperti
+        "loss_today": 0.0,         # somma degli SL toccati oggi (obiettivo giornaliero in $)
         "last_signal_candle": None,
         "tg_offset": 0,
         "summary_sent": False,
@@ -110,7 +111,9 @@ def p2(x):
     return f"{x:,.2f}"
 
 
-def signal_message(sig, loser, mirror, when_rome):
+def signal_message(sig, loser, mirror, when_rome, sl_usd=None, loss_today=0.0):
+    sl_usd = sl_usd or config.SL_USD
+    sl_pts = core.sl_points(sl_usd)
     level = sig.get("relax", 0)
     note = {
         0: "Filtri: selettivi",
@@ -124,16 +127,17 @@ def signal_message(sig, loser, mirror, when_rome):
         f"VWAP sessione {sig.get('vwap', float('nan')):,.2f}\n"
         f"{note}\n\n"
         f"BROKER PERDENTE: {loser['dir']} {config.LOT_SIZE} @ {p2(loser['entry'])} (conto virtuale)\n"
-        f"  SL obiettivo {p2(loser['sl'])}  ({core.fmt_usd(-config.SL_USD, True)})\n"
+        f"  SL {'DI COMPLETAMENTO' if sl_usd < config.SL_USD - 0.5 else 'obiettivo'} {p2(loser['sl'])}  ({core.fmt_usd(-sl_usd, True)})\n"
         f"  TP da evitare {p2(loser['tp'])}  ({core.fmt_usd(config.TP_USD, True)})\n"
         f"  Limite slippage {p2(loser['slip'])}  ({core.fmt_usd(-config.SLIPPAGE_MAX_USD, True)}) MAI da raggiungere\n\n"
         f"BROKER SPECULARE (reale): {mirror['dir']} {config.MIRROR_LOT} @ {p2(mirror['entry'])}\n"
-        f"  TP {p2(mirror['tp'])}  ({core.fmt_usd(config.SL_USD * config.MIRROR_LOT_RATIO, True)})\n"
+        f"  TP {p2(mirror['tp'])}  ({core.fmt_usd(sl_usd * config.MIRROR_LOT_RATIO, True)})\n"
         f"  SL {p2(mirror['sl'])}  ({core.fmt_usd(-config.TP_USD * config.MIRROR_LOT_RATIO, True)})\n\n"
-        f"Distanze dal tuo prezzo di ingresso: SL {config.SL_POINTS:.2f} pt | TP {config.TP_POINTS:.2f} pt | "
+        f"Distanze dal tuo prezzo di ingresso: SL {sl_pts:.2f} pt | TP {config.TP_POINTS:.2f} pt | "
         f"slippage {config.SLIPPAGE_POINTS:.2f} pt\n"
         f"(i livelli sopra partono dalla chiusura della candela: se entri a un prezzo diverso, applica le stesse distanze)\n\n"
-        f"Chiusura automatica: {config.FORCE_CLOSE:%H:%M} | Segnale n. {{n}} di oggi"
+        + (f"Obiettivo giornaliero: {core.fmt_usd(loss_today)} fatti su {core.fmt_usd(config.DAILY_LOSS_TARGET_USD)}\n\n" if config.DAILY_LOSS_TARGET_USD else "")
+        + f"Chiusura automatica: {config.FORCE_CLOSE:%H:%M} | Segnale n. {{n}} di oggi"
         + ("\nPosizione unica: non ne apro altre finche' non ti scrivo l'esito." if config.SINGLE_POSITION else "")
         + (f"\nSe lo apri, scrivi /eseguito entro {config.CONFIRM_TIMEOUT_MIN} minuti: solo allora lo seguo." if config.REQUIRE_CONFIRMATION else "")
     )
@@ -148,7 +152,8 @@ def manage_positions(st, df, now_rome):
     for op in st["positions"]:
         start = pd.Timestamp(op["candle_start"])
         label = f"{core.candle_end_rome(start):%H:%M}"
-        loser, _ = core.levels(op["entry"], op["loser"])
+        sl_usd = op.get("sl_usd") or config.SL_USD
+        loser, _ = core.levels(op["entry"], op["loser"], sl_usd)
         resolved = False
 
         if not op.get("confirmed", True):
@@ -163,7 +168,7 @@ def manage_positions(st, df, now_rome):
             continue
 
         for ts, b in df[df.index > start].iterrows():
-            outcome, slip, adverse_usd = core.step_outcome(op["loser"], op["entry"], b["high"], b["low"])
+            outcome, slip, adverse_usd = core.step_outcome(op["loser"], op["entry"], b["high"], b["low"], sl_usd)
             if slip:
                 stats["slip_alerts"] += 1
                 notifier.send_notification(
@@ -174,20 +179,27 @@ def manage_positions(st, df, now_rome):
                 )
             if outcome in ("SL", "TP", "AMBIGUO"):
                 exit_price = loser["sl"] if outcome == "SL" else loser["tp"]
-                pnl = -config.SL_USD if outcome == "SL" else config.TP_USD
+                pnl = -sl_usd if outcome == "SL" else config.TP_USD
                 stats[outcome] += 1
                 stats["pnl_usd"] += pnl
                 if outcome == "SL":
-                    txt = (f"OBIETTIVO RAGGIUNTO sul segnale delle {label}: SL toccato sul perdente "
-                           f"({core.fmt_usd(-config.SL_USD, True)}).\n"
-                           f"Lo speculare e' in TP ({core.fmt_usd(config.SL_USD * r, True)}): chiudi entrambe se non gia' fatto.\n")
-                    st["done_today"] = True      # obiettivo del giorno raggiunto: basta, comunque sia impostato il resto
-                    txt += "Per oggi hai finito: nessun altro segnale."
+                    txt = (f"SL TOCCATO sul segnale delle {label} "
+                           f"({core.fmt_usd(-sl_usd, True)}).\n"
+                           f"Lo speculare e' in TP ({core.fmt_usd(sl_usd * r, True)}): chiudi entrambe se non gia' fatto.\n")
+                    st["loss_today"] = st.get("loss_today", 0.0) + sl_usd
+                    target = config.DAILY_LOSS_TARGET_USD
+                    if not target or st["loss_today"] >= target - 0.5:
+                        st["done_today"] = True      # obiettivo del giorno raggiunto: basta
+                        txt += ("OBIETTIVO GIORNALIERO RAGGIUNTO: " + core.fmt_usd(st["loss_today"]) + ". " if target else "") + "Per oggi hai finito: nessun altro segnale."
+                    else:
+                        nxt = core.next_sl_usd(st["loss_today"])
+                        txt += (f"Obiettivo giornaliero: {core.fmt_usd(st['loss_today'])} su {core.fmt_usd(target)}. "
+                                f"Il prossimo segnale (completamento) avra' SL {core.fmt_usd(nxt)}.")
                 elif outcome == "TP":
                     txt = (f"ESITO DA EVITARE sul segnale delle {label}: TP toccato sul perdente "
                            f"({core.fmt_usd(config.TP_USD, True)}).\n"
                            f"Lo speculare e' in SL ({core.fmt_usd(-config.TP_USD * r, True)}): chiudi entrambe se non gia' fatto.\n"
-                           + ("Per oggi hai finito: nessun altro segnale." if config.STOP_AFTER_EXECUTION
+                           + ("Per oggi hai finito: nessun altro segnale." if (config.STOP_AFTER_EXECUTION and not config.DAILY_LOSS_TARGET_USD)
                               else "Cerco un nuovo segnale se c'e' ancora tempo (max " f"{config.MAX_SIGNALS_PER_DAY} al giorno)."))
                 else:
                     txt = (f"Segnale delle {label}: SL e TP toccati nella stessa candela M5, ordine non ricostruibile.\n"
@@ -229,7 +241,9 @@ def maybe_new_signal(st, df, now_rome):
     age_min = (now_rome - end_rome).total_seconds() / 60
     if age_min > config.MAX_SIGNAL_AGE_MIN or age_min < -1:
         return  # dati non freschi (mercato chiuso o ritardo): troppo tardi per entrare
-    if not core.signal_allowed(end_rome) or not core.signal_allowed(now_rome):
+    sl_pre = core.next_sl_usd(st.get("loss_today", 0.0))
+    allowed = core.in_signal_window if (sl_pre is not None and sl_pre < config.SL_USD - 0.5) else core.signal_allowed
+    if not allowed(end_rome) or not allowed(now_rome):      # il limite delle 15:00 non vale per il completamento (SL piccolo)
         return
     if st["last_signal_candle"] == str(last_start):
         return
@@ -239,20 +253,28 @@ def maybe_new_signal(st, df, now_rome):
     if not core.gap_ok(gap):
         return
 
-    level_max = core.max_relax_level(st["signals_today"], core.minutes_of(end_rome))
+    sl_usd = core.next_sl_usd(st.get("loss_today", 0.0))
+    if sl_usd is None:
+        st["done_today"] = True
+        return
+    completion = sl_usd < config.SL_USD - 0.5
+    level_max = 2 if completion else core.max_relax_level(st["signals_today"], core.minutes_of(end_rome))
     sig = strategy_hedge.check_last(df, relax=level_max)
+    if not sig and completion:
+        sig = strategy_hedge.fallback_signal(df)     # SL di completamento: parte subito, direzione dal trend
     if not sig:
         return
 
-    loser, mirror = core.levels(sig["price"], sig["loser"])
+    loser, mirror = core.levels(sig["price"], sig["loser"], sl_usd)
     st["signals_today"] += 1
     prev_candle = st["last_signal_candle"]
     st["last_signal_candle"] = str(last_start)
-    text = signal_message(sig, loser, mirror, end_rome).replace("{n}", str(st["signals_today"]))
+    text = signal_message(sig, loser, mirror, end_rome, sl_usd, st.get("loss_today", 0.0)).replace("{n}", str(st["signals_today"]))
     if notifier.send_notification(text):
         st["positions"].append({
             "candle_start": str(last_start), "loser": sig["loser"], "entry": sig["price"],
             "relax": sig.get("relax", 0),
+            "sl_usd": sl_usd,
             "confirmed": not config.REQUIRE_CONFIRMATION,
         })
         print("Segnale inviato.")
@@ -291,6 +313,7 @@ def handle_commands(st):
             s = st["stats"]
             notifier.send_notification(
                 f"STATO {st['day']}\n"
+                f"Perdita cumulata oggi: {core.fmt_usd(st.get('loss_today', 0.0))} su {core.fmt_usd(config.DAILY_LOSS_TARGET_USD)} | "
                 f"Segnali oggi: {st['signals_today']} | "
                 f"Pausa: {'si' if st['paused'] else 'no'} | Fatto: {'si' if st.get('done_today') else 'no'}\n"
                 f"Esiti: SL {s['SL']} | TP {s['TP']} | Chiusura {s['CHIUSURA']} | Ambigui {s['AMBIGUO']}\n"

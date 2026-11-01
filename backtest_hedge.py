@@ -98,17 +98,18 @@ class Ctx:
         return self.wd[i] < 5 and self.start_m <= end_m < self.end_m
 
 
-def run_trade(ctx, i, loser, entry):
+def run_trade(ctx, i, loser, entry, sl_usd=None):
     """Stesse regole del live. Parte dalla candela successiva al segnale."""
     for j in range(i + 1, ctx.n):
         if ctx.day[j] != ctx.day[i] or ctx.mins[j] >= ctx.close_m:
             exit_price = ctx.o[j] if ctx.day[j] == ctx.day[i] else ctx.c[j - 1]
             return {"i": i, "exit_i": j, "loser": loser, "result": "CHIUSURA", "slip": False,
-                    "pnl": core.pnl_usd(loser, entry, exit_price)}
-        outcome, slip, _ = core.step_outcome(loser, entry, ctx.h[j], ctx.l[j])
+                    "pnl": core.pnl_usd(loser, entry, exit_price), "sl_usd": sl_usd or config.SL_USD}
+        outcome, slip, _ = core.step_outcome(loser, entry, ctx.h[j], ctx.l[j], sl_usd)
         if outcome:
-            pnl = -config.SL_USD if outcome == "SL" else config.TP_USD  # AMBIGUO = caso peggiore
-            return {"i": i, "exit_i": j, "loser": loser, "result": outcome, "slip": slip, "pnl": pnl}
+            pnl = -(sl_usd or config.SL_USD) if outcome == "SL" else config.TP_USD  # AMBIGUO = caso peggiore
+            return {"i": i, "exit_i": j, "loser": loser, "result": outcome, "slip": slip, "pnl": pnl,
+                    "sl_usd": sl_usd or config.SL_USD}
     return None  # i dati finiscono prima dell'esito
 
 
@@ -255,22 +256,34 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
     frames = [strategy_hedge.level_frame(df, lvl, params) for lvl in (0, 1, 2)]
     losers = [f["loser"].to_numpy() for f in frames]
     gap_candles = -(-config.MIN_SIGNAL_GAP_MIN // core.CANDLE_MIN)
-    trades, busy_until, per_day, last_i, done = [], -1, {}, {}, set()
+    p = strategy_hedge._merge(params)
+    ef, em = df["close"].ewm(span=p["ema_fast"], adjust=False).mean().to_numpy(), df["close"].ewm(span=p["ema_mid"], adjust=False).mean().to_numpy()
+    trend_loser = np.where(ef >= em, "SELL", "BUY")      # il mirror segue il trend, il perdente e' l'opposto
+    trades, busy_until, per_day, last_i, done, loss = [], -1, {}, {}, set(), {}
     for i in range(max(0, strategy_hedge.MIN_BARS), ctx.n):
         if i < busy_until or not ctx.signal_ok(i):
             continue
-        last = getattr(config, "LAST_SIGNAL_TIME", None)
-        if last is not None and ctx.mins[i] + core.CANDLE_MIN > last.hour * 60 + last.minute:
-            continue
         d = int(ctx.day[i])
+        sl_pre = core.next_sl_usd(loss.get(d, 0.0))
+        completion_pre = sl_pre is not None and sl_pre < config.SL_USD - 0.5
+        last = getattr(config, "LAST_SIGNAL_TIME", None)
+        if (not completion_pre) and last is not None and ctx.mins[i] + core.CANDLE_MIN > last.hour * 60 + last.minute:
+            continue          # il limite orario vale per i segnali interi; il completamento (SL piccolo) puo' arrivare fino alle 20:00
         n = per_day.get(d, 0)
         if d in done or (config.MAX_SIGNALS_PER_DAY and n >= config.MAX_SIGNALS_PER_DAY):
             continue
         if i - last_i.get(d, -10**9) < gap_candles:
             continue
+        sl_usd = core.next_sl_usd(loss.get(d, 0.0))
+        if sl_usd is None:
+            done.add(d)
+            continue
+        completion = sl_usd < config.SL_USD - 0.5
         loser = None
         if blind:
             loser = rng.choice(("BUY", "SELL"))
+        elif completion:
+            loser = losers[2][i] or trend_loser[i]          # completamento: parte subito, direzione dal trend
         else:
             top = core.max_relax_level(n, int(ctx.mins[i]) + core.CANDLE_MIN)
             for lvl in range(top + 1):
@@ -279,7 +292,7 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
                     break
         if not loser:
             continue
-        t = run_trade(ctx, i, loser, ctx.c[i])
+        t = run_trade(ctx, i, loser, ctx.c[i], sl_usd)
         if t is None:
             continue
         per_day[d] = n + 1
@@ -287,12 +300,20 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
         busy_until = t["exit_i"]
         t["n"] = n + 1
         trades.append(t)
-        if config.STOP_AFTER_EXECUTION or t["result"] == "SL":
+        if t["result"] == "SL":
+            loss[d] = loss.get(d, 0.0) + t["sl_usd"]
+        target = getattr(config, "DAILY_LOSS_TARGET_USD", 0)
+        if target:
+            if loss.get(d, 0.0) >= target - 0.5:
+                done.add(d)
+        elif config.STOP_AFTER_EXECUTION or t["result"] == "SL":
             done.add(d)  # regola attuale: primo trade eseguito e basta. Con STOP_AFTER_EXECUTION=False (solo what-if): stop dopo lo SL, nuovo tentativo dopo TP/chiusura
     return trades
 
 
 def run_sequential(ctx, df, label, overrides, blind=False):
+    if "DAILY_LOSS_TARGET_USD" not in overrides:
+        overrides = dict(overrides, DAILY_LOSS_TARGET_USD=0.0)   # confronti storici: "almeno uno SL", senza obiettivo in dollari
     saved = {k: getattr(config, k) for k in overrides}
     for k, v in overrides.items():
         setattr(config, k, v)
@@ -304,14 +325,36 @@ def run_sequential(ctx, df, label, overrides, blind=False):
     d, sm = daily_view(ctx, tr), summarize(tr)
     first = [t for t in tr if t["n"] == 1]
     first_sl = sum(1 for t in first if t["result"] == "SL")
+    tgt = overrides.get("DAILY_LOSS_TARGET_USD", getattr(config, "DAILY_LOSS_TARGET_USD", 0))
+    if tgt:
+        per = {}
+        for t in tr:
+            if t["result"] == "SL":
+                per[int(ctx.day[t["i"]])] = per.get(int(ctx.day[t["i"]]), 0.0) + t["sl_usd"]
+        ok = sum(1 for v in per.values() if v >= tgt - 0.5)
+        lo, hi = wilson(ok, d["days"])
+        print(f"   {label}: OBIETTIVO {tgt:.0f}$ in {ok}/{d['days']} giorni ({ok/max(d['days'],1)*100:.0f}%, IC95 {lo*100:.0f}-{hi*100:.0f}) | "
+              f"{d['avg_sig']:.1f} trade/giorno | TP/giorno {sm['TP']/max(d['days'],1):.1f} | "
+              f"giorni con almeno uno SL {d['hit']}")
+        return
     print(f"   {label}: SL in {d['hit']}/{d['days']} giorni ({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "
           f"{d['avg_sig']:.1f} trade/giorno | SL gia' al 1o tentativo {first_sl}/{d['days']} giorni | "
           f"TP/giorno {sm['TP']/max(d['days'],1):.1f} | P&L speculare reale {core.fmt_usd(d['real'], True)}")
 
 
 SEQ_VARIANTS = [
+    ("CONFIG ATTUALE (come in config.py)", dict(DAILY_LOSS_TARGET_USD=getattr(config, "DAILY_LOSS_TARGET_USD", 0.0))),
+    ("OBIETTIVO 2.500$: SL 2.200$ + completamento 300$, partenza subito, fino a 4 segnali, ultimo 16:00",
+     dict(DAILY_LOSS_TARGET_USD=2500.0, STOP_AFTER_EXECUTION=False, BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=4, MAX_SIGNALS_PER_DAY=4, MIN_SIGNAL_GAP_MIN=10, LAST_SIGNAL_TIME=time(16, 0))),
+    ("OBIETTIVO 2.500$: come sopra, ultimo segnale 15:00",
+     dict(DAILY_LOSS_TARGET_USD=2500.0, STOP_AFTER_EXECUTION=False, BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=4, MAX_SIGNALS_PER_DAY=4, MIN_SIGNAL_GAP_MIN=10)),
+    ("OBIETTIVO 2.500$ con UN SOLO SL da 2.500$ (margine sullo slippage di soli 0,96 pt), fino a 2 segnali",
+     dict(DAILY_LOSS_TARGET_USD=2500.0, SL_USD=2500.0, SL_POINTS=2500.0 / (1.04 * 100), STOP_AFTER_EXECUTION=False, BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=2, MAX_SIGNALS_PER_DAY=2, MIN_SIGNAL_GAP_MIN=10)),
     ("config attuale (filtri selettivi, ultimo segnale 15:00)", {}),
     ("filtri allargati (base 1)", dict(BASE_RELAX_LEVEL=1)),
+    ("PARTENZA SUBITO: 2 tentativi, direzione dal trend (EMA+VWAP) appena si apre la finestra", dict(BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=2, MAX_SIGNALS_PER_DAY=2, MIN_SIGNAL_GAP_MIN=10)),
+    ("PARTENZA SUBITO: 3 tentativi, direzione dal trend (EMA+VWAP)", dict(BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=3, MAX_SIGNALS_PER_DAY=3, MIN_SIGNAL_GAP_MIN=10)),
+    ("PARTENZA SUBITO: 2 tentativi, ultimo segnale 16:00", dict(BASE_RELAX_LEVEL=2, TARGET_SIGNALS_PER_DAY=2, MAX_SIGNALS_PER_DAY=2, MIN_SIGNAL_GAP_MIN=10, LAST_SIGNAL_TIME=time(16, 0))),
     ("ultimo segnale alle 14:00", dict(LAST_SIGNAL_TIME=time(14, 0))),
     ("ultimo segnale alle 16:00", dict(LAST_SIGNAL_TIME=time(16, 0))),
     ("ultimo segnale alle 20:00 (nessun limite)", dict(LAST_SIGNAL_TIME=time(20, 0))),
@@ -440,7 +483,7 @@ def main():
         print("   ", daily_line("obiettivo giornaliero", daily_view(ctx, tr)))
     print(line("ingresso cieco", summarize(baseline(ctx))))
 
-    print("\n=== UN SOLO TRADE AL GIORNO (si esegue il primo segnale, poi basta qualunque esito) ===")
+    print("\n=== OBIETTIVO GIORNALIERO E TENTATIVI (le righe senza 'OBIETTIVO' contano solo 'almeno uno SL', come nei report precedenti) ===")
     for label, over in SEQ_VARIANTS:
         run_sequential(ctx, df, label, over)
     run_sequential(ctx, df, "riferimento cieco (direzione a caso)", dict(), blind=True)
@@ -455,7 +498,12 @@ def main():
     print("\n=== CONFRONTO EMA (un trade al giorno, resto come config attuale) ===")
     for name, emas in (("EMA 10/20/100", (10, 20, 100)), ("EMA 9/20/200 (attuale)", (9, 20, 200))):
         prm = {"ema_fast": emas[0], "ema_mid": emas[1], "ema_trend": emas[2]}
-        tr = sequential_trades(ctx, df, params=prm)
+        _t = getattr(config, "DAILY_LOSS_TARGET_USD", 0.0)
+        config.DAILY_LOSS_TARGET_USD = 0.0
+        try:
+            tr = sequential_trades(ctx, df, params=prm)
+        finally:
+            config.DAILY_LOSS_TARGET_USD = _t
         d, sm = daily_view(ctx, tr), summarize(tr)
         first_sl = sum(1 for t in tr if t["n"] == 1 and t["result"] == "SL")
         print(f"   {name}: SL in {d['hit']}/{d['days']} giorni ({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "

@@ -73,13 +73,30 @@ def opposite(direction):
     return "SELL" if direction == "BUY" else "BUY"
 
 
-def levels(entry, loser_dir):
+def sl_points(sl_usd=None):
+    return (sl_usd if sl_usd else config.SL_USD) / config.USD_PER_POINT
+
+
+def next_sl_usd(loss_today):
+    """SL (in $) del prossimo segnale. None = obiettivo giornaliero gia' raggiunto."""
+    target = getattr(config, "DAILY_LOSS_TARGET_USD", 0)
+    if not target:
+        return config.SL_USD
+    remaining = target - loss_today
+    if remaining <= 0.5:
+        return None
+    if remaining >= config.SL_USD:
+        return config.SL_USD
+    return max(remaining, getattr(config, "MIN_COMPLETION_SL_USD", 300.0))
+
+
+def levels(entry, loser_dir, sl_usd=None):
     """Livelli di prezzo per la gamba PERDENTE e per quella SPECULARE."""
     sgn = 1 if loser_dir == "BUY" else -1
     loser = {
         "dir": loser_dir,
         "entry": entry,
-        "sl": entry - sgn * config.SL_POINTS,        # obiettivo
+        "sl": entry - sgn * sl_points(sl_usd),        # obiettivo
         "tp": entry + sgn * config.TP_POINTS,        # da evitare
         "slip": entry - sgn * config.SLIPPAGE_POINTS,  # limite da non raggiungere
     }
@@ -93,7 +110,7 @@ def levels(entry, loser_dir):
 
 
 # ---------- esito di una candela ----------
-def step_outcome(loser_dir, entry, high, low):
+def step_outcome(loser_dir, entry, high, low, sl_usd=None):
     """Valuta una candela CHIUSA per la gamba perdente.
 
     Ritorna (esito, slip_breach, adverse_usd) con esito in
@@ -108,7 +125,7 @@ def step_outcome(loser_dir, entry, high, low):
         adverse = high - entry
         favorable = entry - low
     adverse = max(adverse, 0.0)
-    hit_sl = adverse >= config.SL_POINTS
+    hit_sl = adverse >= sl_points(sl_usd)
     hit_tp = favorable >= config.TP_POINTS
     slip = adverse >= config.SLIPPAGE_POINTS
     adverse_usd = adverse * config.USD_PER_POINT
