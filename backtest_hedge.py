@@ -55,7 +55,7 @@ def fetch_history(pages):
         end = (part["datetime"].min() - pd.Timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
         print(f"Pagina {k + 1}/{pages}: {len(part)} candele fino a {part['datetime'].min()}")
         if k < pages - 1:
-            _time.sleep(8)  # limite piano gratuito: 8 richieste/minuto
+            _time.sleep(10)  # limite piano gratuito: 8 richieste/minuto (margine per il bot live)
     if not frames:
         raise SystemExit("Nessun dato scaricato.")
     return clean(pd.concat(frames))
