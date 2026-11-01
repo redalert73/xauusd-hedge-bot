@@ -41,7 +41,7 @@ MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifi
 # --- Livelli di rischio (broker PERDENTE) ---
 SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
 TP_USD = 2000.0           # esito da evitare
-SLIPPAGE_MAX_USD = 2600.0 # perdita massima da non raggiungere mai
+SLIPPAGE_MAX_USD = 2200.0 # perdita massima da non raggiungere mai
 
 SL_POINTS = SL_USD / USD_PER_POINT                # ~21.15
 TP_POINTS = TP_USD / USD_PER_POINT                # ~19.23
