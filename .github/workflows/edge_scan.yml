@@ -5,7 +5,12 @@ on:
     inputs:
       pages:
         description: "Pagine da 5000 candele M5 (circa 17 giorni di mercato ciascuna)"
-        default: "6"
+        default: "20"
+
+# Un solo workflow alla volta che usa Twelve Data: il piano gratuito ha 8 richieste al minuto.
+concurrency:
+  group: twelvedata
+  cancel-in-progress: false
 
 jobs:
   scan:
