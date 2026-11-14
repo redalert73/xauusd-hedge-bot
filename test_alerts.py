@@ -7,6 +7,8 @@
 import time
 
 import config
+import hedge_core as core
+import news
 import notifier
 
 WAIT_SECONDS = 90
@@ -23,6 +25,16 @@ if __name__ == "__main__":
     print("Telegram OK" if ok else "Telegram: invio NON riuscito")
     if not ok:
         raise SystemExit(1)
+
+    # Calendario notizie: verifica che la fonte risponda e mostra le notizie forti della settimana.
+    if config.NEWS_FILTER:
+        ev = news.fetch()
+        if ev is None:
+            notifier.send_notification("Calendario notizie: NON raggiungibile in questo momento. Riprova piu' tardi; se continua, avvisami.")
+        else:
+            righe = "\n".join(f"{core.to_rome(e['t']):%a %d/%m} {news.label(e, core.to_rome)}" for e in ev) or "nessuna"
+            notifier.send_notification(f"Calendario notizie OK. Notizie forti di questa settimana (ora IT):\n{righe}")
+        print("Calendario notizie:", "non raggiungibile" if ev is None else f"{len(ev)} notizie forti")
 
     notifier.send_notification(
         f"Prova pulsanti: premi Eseguito qui sotto (o un tasto della tastiera) entro {WAIT_SECONDS} secondi.\n"

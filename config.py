@@ -41,7 +41,7 @@ MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifi
 # --- Livelli di rischio (broker PERDENTE) ---
 SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
 TP_USD = 2000.0           # esito da evitare
-SLIPPAGE_MAX_USD = 2600.0 # perdita massima da non raggiungere mai
+SLIPPAGE_MAX_USD = 3000.0 # perdita massima da non raggiungere mai
 
 SL_POINTS = SL_USD / USD_PER_POINT                # ~21.15
 TP_POINTS = TP_USD / USD_PER_POINT                # ~19.23
@@ -86,5 +86,17 @@ MAX_SIGNALS_PER_DAY = 3       # massimo di segnali al giorno: il secondo arriva 
 MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
+# --- Notizie forti (calendario economico) ---
+# Il bot NON puo' sapere in che verso andra' il prezzo dopo una notizia: evita tutte quelle forti.
+NEWS_FILTER = True
+NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"   # calendario settimanale gratuito (Forex Factory)
+NEWS_CURRENCIES = ["USD"]         # l'oro e' quotato in dollari: contano le notizie USA
+NEWS_IMPACT = ["High"]            # solo impatto alto; aggiungi "Medium" per essere piu' prudente
+NEWS_BLOCK_BEFORE_MIN = 60        # nessun nuovo segnale nei 60 minuti prima della notizia
+NEWS_BLOCK_AFTER_MIN = 30         # ... e nei 30 minuti dopo
+NEWS_ALERT_OPEN_MIN = 20          # se hai una posizione aperta, avviso 20 minuti prima della notizia
+NEWS_REFRESH_HOURS = 6            # ogni quanto riscaricare il calendario
+NEWS_BLOCK_IF_UNAVAILABLE = False # True: se il calendario non si scarica, niente segnali (piu' sicuro ma il bot puo' restare fermo)
+
 MAX_SIGNAL_AGE_MIN = 10       # scarta il segnale se la candela e' piu' vecchia di cosi'
 CANDLES_TO_FETCH = 1500       # candele M5 per esecuzione (~5 giorni): servono a ATR mediano e VWAP

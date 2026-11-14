@@ -22,6 +22,7 @@ import requests
 
 import config
 import hedge_core as core
+import news
 import notifier
 from strategies import strategy_hedge
 
@@ -43,6 +44,10 @@ def new_state(day):
         "last_signal_candle": None,
         "tg_offset": 0,
         "summary_sent": False,
+        "news": None,              # calendario notizie scaricato (resta anche nei giorni successivi)
+        "news_day_sent": False,    # elenco notizie di oggi gia' inviato
+        "news_alerted": [],        # notizie per cui ho gia' avvisato con posizione aperta
+        "news_ok": True,           # calendario disponibile
         "stats": {"SL": 0, "TP": 0, "AMBIGUO": 0, "CHIUSURA": 0, "pnl_usd": 0.0, "slip_alerts": 0},
     }
 
@@ -58,6 +63,7 @@ def load_state(day):
         fresh = new_state(day)
         fresh["tg_offset"] = st.get("tg_offset", 0)
         fresh["positions"] = st.get("positions", [])
+        fresh["news"] = st.get("news")
         return fresh
     return st
 
@@ -228,9 +234,48 @@ def manage_positions(st, df, now_rome):
 
 
 # ---------- nuovo segnale ----------
+def handle_news(st, now_rome, now_utc):
+    """Aggiorna il calendario, manda l'elenco del giorno e avvisa se c'e' una posizione aperta vicino a una notizia."""
+    if not config.NEWS_FILTER:
+        st["news_events"] = []
+        return
+    events, ok = news.refresh(st, now_utc)
+    st["news_events"] = events          # solo per questa esecuzione (tolto prima di salvare)
+    st["news_ok"] = ok
+    if not st.get("news_day_sent") and core.minutes_of(now_rome) >= core.minutes_of(config.SIGNAL_START) - 20:
+        today = news.of_day(events, st["day"], core.to_rome)
+        if not ok:
+            notifier.send_notification(
+                "CALENDARIO NOTIZIE NON DISPONIBILE: oggi non posso evitare le notizie forti. Controllale tu prima di aprire."
+                + (" Nuovi segnali bloccati finche' non torna." if config.NEWS_BLOCK_IF_UNAVAILABLE else ""))
+        elif today:
+            notifier.send_notification(
+                "NOTIZIE FORTI DI OGGI (ora IT):\n" + "\n".join(news.label(e, core.to_rome) for e in today)
+                + f"\nNessun nuovo segnale da {config.NEWS_BLOCK_BEFORE_MIN} min prima a {config.NEWS_BLOCK_AFTER_MIN} min dopo ciascuna.")
+        st["news_day_sent"] = True
+    if any(op.get("confirmed", True) for op in st["positions"]):
+        for e in news.upcoming(events, now_utc, config.NEWS_ALERT_OPEN_MIN):
+            key = e["t"] + e["title"]
+            if key in st.get("news_alerted", []):
+                continue
+            st.setdefault("news_alerted", []).append(key)
+            notifier.send_notification(
+                f"NOTIZIA FORTE IN ARRIVO: {news.label(e, core.to_rome)}\n"
+                "Hai una posizione aperta: durante la notizia il prezzo puo' saltare oltre lo stop.\n"
+                "Valuta se chiuderla prima (poi premi Fatto se per oggi hai finito).")
+
+
 def maybe_new_signal(st, df, now_rome):
     if st["paused"] or st.get("done_today"):
         return
+    if config.NEWS_FILTER:
+        now_utc = now_rome.tz_convert("UTC").tz_localize(None).to_pydatetime()
+        if not st.get("news_ok", True) and config.NEWS_BLOCK_IF_UNAVAILABLE:
+            return
+        ev = news.blocking_event(st.get("news_events", []), now_utc)
+        if ev:
+            print("Segnali sospesi: notizia forte vicina.")
+            return
     if config.SINGLE_POSITION and st["positions"]:
         return  # una posizione alla volta: aspetto l'esito di quella aperta
     if config.MAX_SIGNALS_PER_DAY and st["signals_today"] >= config.MAX_SIGNALS_PER_DAY:
@@ -353,6 +398,7 @@ def run_production(now_rome=None):
 
     st = load_state(now_rome.strftime("%Y-%m-%d"))
     handle_commands(st)
+    handle_news(st, now_rome, now_utc.to_pydatetime())
 
     needs_data = bool(st["positions"]) or core.in_signal_window(now_rome)
     if needs_data:
@@ -367,6 +413,7 @@ def run_production(now_rome=None):
             st["positions"] = []
 
     maybe_summary(st, now_rome)
+    st.pop("news_events", None)
     save_state(st)
 
 
