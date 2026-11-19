@@ -41,7 +41,7 @@ MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifi
 # --- Livelli di rischio (broker PERDENTE) ---
 SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
 TP_USD = 2000.0           # esito da evitare
-SLIPPAGE_MAX_USD = 3000.0 # perdita massima da non raggiungere mai
+SLIPPAGE_MAX_USD = 2600.0 # perdita massima da non raggiungere mai
 
 SL_POINTS = SL_USD / USD_PER_POINT                # ~21.15
 TP_POINTS = TP_USD / USD_PER_POINT                # ~19.23
@@ -82,7 +82,7 @@ STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altr
 #   massimo         : 1 / 12 / 30 /  5   (~15 segnali/giorno: poco in piu' sui giorni con SL)
 BASE_RELAX_LEVEL = 2          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
 TARGET_SIGNALS_PER_DAY = 2    # il bot allenta i filtri man mano che passa il tempo finche' non arrivano questi segnali
-MAX_SIGNALS_PER_DAY = 3       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
+MAX_SIGNALS_PER_DAY = 5       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
 MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
