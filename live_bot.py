@@ -170,6 +170,19 @@ def manage_positions(st, df, now_rome):
                     f"Segnale delle {label} scaduto: non confermato con /eseguito, non lo seguo e non conta."
                 )
             else:
+                remind = getattr(config, "CONFIRM_REMINDER_MIN", 5)
+                if remind and age_min >= remind and not op.get("reminded"):
+                    op["reminded"] = True
+                    left = max(1, int(config.CONFIRM_TIMEOUT_MIN - age_min))
+                    now_px = float(df["close"].iloc[-1])
+                    mirror_dir = "BUY" if op["loser"] == "SELL" else "SELL"
+                    notifier.send_notification(
+                        f"PROMEMORIA: segnale delle {label} ancora da confermare.\n"
+                        f"PERDENTE {op['loser']} {config.LOT_SIZE} | SPECULARE {mirror_dir} {config.MIRROR_LOT}\n"
+                        f"Prezzo del segnale {p2(op['entry'])} | ultimo prezzo {p2(now_px)}\n"
+                        f"Se entri ora, SL a {core.sl_points(sl_usd):.2f} pt dal TUO prezzo di ingresso.\n"
+                        f"Restano circa {left} minuti: se lo apri, premi Eseguito."
+                    )
                 remaining.append(op)
             continue
 
@@ -370,6 +383,22 @@ def handle_commands(st):
             )
 
 
+def maybe_morning(st, now_rome):
+    """Messaggio del mattino: conferma che il bot e' attivo prima dell'apertura della finestra."""
+    lead = getattr(config, "MORNING_PING_MIN", 5)
+    if not lead or st.get("morning_sent") or st.get("paused"):
+        return
+    m, start = core.minutes_of(now_rome), core.minutes_of(config.SIGNAL_START)
+    if start - lead <= m < start + 60:
+        st["morning_sent"] = True
+        last = getattr(config, "LAST_SIGNAL_TIME", None)
+        notifier.send_notification(
+            f"Buongiorno: bot attivo. Primo segnale possibile dalle {config.SIGNAL_START:%H:%M}.\n"
+            f"Oggi fino a {config.MAX_SIGNALS_PER_DAY} segnali, l'ultimo entro le {(last or config.SIGNAL_END):%H:%M}. "
+            f"SL {core.fmt_usd(config.SL_USD)} | TP {core.fmt_usd(config.TP_USD)} | conferma entro {config.CONFIRM_TIMEOUT_MIN} min."
+        )
+
+
 def maybe_summary(st, now_rome):
     if st["summary_sent"] or not core.at_or_past_force_close(now_rome) or st["positions"]:
         return
@@ -399,6 +428,7 @@ def run_production(now_rome=None):
     st = load_state(now_rome.strftime("%Y-%m-%d"))
     handle_commands(st)
     handle_news(st, now_rome, now_utc.to_pydatetime())
+    maybe_morning(st, now_rome)
 
     needs_data = bool(st["positions"]) or core.in_signal_window(now_rome)
     if needs_data:
