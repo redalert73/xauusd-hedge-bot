@@ -52,7 +52,7 @@ TIMEZONE = "Europe/Rome"
 SIGNAL_START = time(6, 0)     # primo segnale inviabile
 SIGNAL_END = time(20, 0)      # nessun nuovo segnale da questo orario
 FORCE_CLOSE = time(21, 45)    # chiusura automatica di tutte le posizioni
-LAST_SIGNAL_TIME = time(16, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
+LAST_SIGNAL_TIME = time(17, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
 
 # --- Fasce a liquidita' ridotta ---
 # In queste fasce (ora italiana) il mercato e' piu' lento: spesso ne' SL ne' TP vengono toccati.
