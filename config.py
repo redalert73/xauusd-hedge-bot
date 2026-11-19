@@ -72,7 +72,7 @@ SINGLE_POSITION = True
 # Conferma manuale: il bot traccia un segnale (SL/TP, stop del giorno) solo se scrivi /eseguito.
 # Se non confermi entro CONFIRM_TIMEOUT_MIN minuti il segnale scade, non conta e puo' arrivarne un altro.
 REQUIRE_CONFIRMATION = True
-CONFIRM_TIMEOUT_MIN = 10
+CONFIRM_TIMEOUT_MIN = 15
 STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altro per quel giorno.
 #   False = "riprova dopo un TP": dopo un TP (o chiusura senza esito) puo' arrivare un nuovo segnale; dopo lo SL si ferma.
 #   Backtest (255 giorni): 2 tentativi con BASE_RELAX_LEVEL=1, TARGET=2, MAX=2, GAP=10 -> SL in ~64% dei giorni; 3 tentativi -> ~69%.
