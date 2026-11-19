@@ -247,7 +247,7 @@ def paced_signals(ctx, df, params=None, start_i=0):
 
 
 # ---------- una posizione alla volta ----------
-def sequential_trades(ctx, df, params=None, blind=False, seed=0):
+def sequential_trades(ctx, df, params=None, blind=False, seed=0, invert=False):
     """Replica del live con SINGLE_POSITION: un solo trade aperto, stop del giorno dopo uno SL,
     nuovo tentativo solo dopo TP / chiusura, distanza minima e tetto giornaliero.
     blind=True: stessi vincoli ma direzione a caso e ingresso appena si puo' (riferimento)."""
@@ -292,6 +292,8 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0):
                     break
         if not loser:
             continue
+        if invert and not blind:
+            loser = "BUY" if loser == "SELL" else "SELL"     # what-if: direzione contraria al segnale
         t = run_trade(ctx, i, loser, ctx.c[i], sl_usd)
         if t is None:
             continue
@@ -340,6 +342,157 @@ def run_sequential(ctx, df, label, overrides, blind=False):
     print(f"   {label}: SL in {d['hit']}/{d['days']} giorni ({d['rate']*100:.0f}%, IC95 {d['ci'][0]*100:.0f}-{d['ci'][1]*100:.0f}) | "
           f"{d['avg_sig']:.1f} trade/giorno | SL gia' al 1o tentativo {first_sl}/{d['days']} giorni | "
           f"TP/giorno {sm['TP']/max(d['days'],1):.1f} | P&L speculare reale {core.fmt_usd(d['real'], True)}")
+
+
+def _eval(ctx, df, over, start=None, invert=False):
+    """Esegue la simulazione con alcuni parametri cambiati. Ritorna statistiche sull'obiettivo in dollari."""
+    saved = {k: getattr(config, k) for k in over}
+    saved_start = ctx.start_m
+    for k, v in over.items():
+        setattr(config, k, v)
+    if start is not None:
+        ctx.start_m = start.hour * 60 + start.minute
+    try:
+        tr = sequential_trades(ctx, df, invert=invert)
+        tgt = config.DAILY_LOSS_TARGET_USD or config.SL_USD
+        all_days = sorted({int(ctx.day[i]) for i in range(ctx.n) if ctx.signal_ok(i)})
+    finally:
+        for k, v in saved.items():
+            setattr(config, k, v)
+        ctx.start_m = saved_start
+    loss, ntp, ntr, net = {}, {}, {}, {}
+    for t in tr:
+        d = int(ctx.day[t["i"]])
+        ntr[d] = ntr.get(d, 0) + 1
+        net[d] = net.get(d, 0.0) + t["pnl"]
+        if t["result"] == "SL":
+            loss[d] = loss.get(d, 0.0) + t["sl_usd"]
+        elif t["result"] == "TP":
+            ntp[d] = ntp.get(d, 0) + 1
+    ok = {d for d in all_days if loss.get(d, 0.0) >= tgt - 0.5}
+    cut = int(len(all_days) * 0.6)
+    a, b = all_days[:cut], all_days[cut:]
+    rate = lambda ds: (sum(1 for d in ds if d in ok) / len(ds)) if ds else 0.0
+    real = -sum(net.values()) * (over.get("MIRROR_LOT_RATIO") or config.MIRROR_LOT_RATIO)
+    return {"n": len(all_days), "ok": len(ok), "all": rate(all_days), "old": rate(a), "new": rate(b),
+            "trades": sum(ntr.values()) / max(len(all_days), 1),
+            "tp2": sum(1 for v in ntp.values() if v >= 2), "close": sum(1 for t in tr if t["result"] == "CHIUSURA"),
+            "slip": sum(1 for t in tr if t.get("slip")), "real": real}
+
+
+def _row(label, r, base=None):
+    lo, hi = wilson(r["ok"], r["n"])
+    diff = ""
+    if base is not None:
+        diff = f" | vs attuale {(r['all']-base['all'])*100:+.0f} pt (vecchi {(r['old']-base['old'])*100:+.0f}, recenti {(r['new']-base['new'])*100:+.0f})"
+    return (f"   {label:44s} {r['all']*100:3.0f}% (IC95 {lo*100:.0f}-{hi*100:.0f}) | vecchi {r['old']*100:3.0f}% recenti {r['new']*100:3.0f}% | "
+            f"trade/g {r['trades']:.1f} | giorni con 2+ TP {r['tp2']:3d} | non risolti {r['close']:3d} | oltre slippage {r['slip']:3d} | "
+            f"reale {core.fmt_usd(r['real'], True)}{diff}")
+
+
+def optimize_report(ctx, df):
+    """Ogni leva provata da sola rispetto alla config attuale, con verifica su dati vecchi (60%) e recenti (40%).
+    Una modifica e' consigliata solo se migliora in ENTRAMBI i periodi di almeno MIN_GAIN punti."""
+    MIN_GAIN = 0.02
+    base = _eval(ctx, df, {})
+    tgt = config.DAILY_LOSS_TARGET_USD or config.SL_USD
+    print(f"\n=== OTTIMIZZAZIONE PARAMETRI (obiettivo {tgt:.0f}$ al giorno; percentuale = giorni in cui e' raggiunto) ===")
+    print("   'vecchi' = primo 60% dei giorni, 'recenti' = ultimo 40%. Una modifica vale solo se migliora in tutti e due.")
+    print(_row("CONFIG ATTUALE", base))
+    h = lambda x: time(x // 60, x % 60)
+    groups = [
+        ("Inizio segnali", "SIGNAL_START", [(f"inizio {t:%H:%M}", {}, t) for t in (time(6, 0), time(6, 30), time(7, 0), time(8, 0))]),
+        ("Ultimo segnale", "LAST_SIGNAL_TIME", [(f"ultimo segnale {x}:00", {"LAST_SIGNAL_TIME": time(x, 0)}, None) for x in (14, 15, 16, 17, 18)]),
+        ("Segnali massimi al giorno", "MAX_SIGNALS_PER_DAY",
+         [(f"max {x} segnali", {"MAX_SIGNALS_PER_DAY": x, "TARGET_SIGNALS_PER_DAY": min(x, config.TARGET_SIGNALS_PER_DAY)}, None) for x in (2, 3, 4, 5)]),
+        ("Distanza minima tra segnali", "MIN_SIGNAL_GAP_MIN", [(f"distanza {x} min", {"MIN_SIGNAL_GAP_MIN": x}, None) for x in (5, 10, 20, 30)]),
+        ("Filtri dei segnali", "BASE_RELAX_LEVEL", [(f"livello {x}" + (" (partenza subito)" if x == 2 else ""), {"BASE_RELAX_LEVEL": x}, None) for x in (0, 1, 2)]),
+        ("Stop loss (l'obiettivo giornaliero resta fisso; con SL piu' piccolo serve un completamento)", "SL_USD",
+         [(f"SL {x}$" + (f" + completamento, max {config.MAX_SIGNALS_PER_DAY + 1} segnali" if x < tgt else ""), dict({"SL_USD": float(x), "SL_POINTS": x / config.USD_PER_POINT},
+                **({"MAX_SIGNALS_PER_DAY": config.MAX_SIGNALS_PER_DAY + 1} if x < tgt else {})), None)
+          for x in (1500, 1800, 2000, 2200) if x < config.SLIPPAGE_MAX_USD - 100]),
+        ("Take profit", "TP_USD", [(f"TP {x}$", {"TP_USD": float(x), "TP_POINTS": x / config.USD_PER_POINT}, None) for x in (2000, 2100, 2200)]),   # limite scelto: TP tra 2.000$ e 2.200$
+    ]
+    best = {}
+    for title, key, variants in groups:
+        print(f"\n   -- {title} --")
+        cand = None
+        for label, over, start in variants:
+            r = _eval(ctx, df, over, start)
+            print(_row(label, r, base))
+            if r["old"] - base["old"] >= MIN_GAIN and r["new"] - base["new"] >= MIN_GAIN:
+                score = min(r["old"] - base["old"], r["new"] - base["new"])
+                if cand is None or score > cand[0]:
+                    cand = (score, label, over, start)
+        if cand:
+            best[key] = cand
+    print("\n   -- Direzione --")
+    print(_row("contraria al segnale (what-if)", _eval(ctx, df, {}, invert=True), base))
+    print("   Se la direzione contraria non e' chiaramente meglio in entrambi i periodi, il segnale non ha vantaggio: e' normale.")
+
+    print("\n=== COMBINAZIONE CONSIGLIATA ===")
+    if not best:
+        print("   Nessuna modifica migliora in entrambi i periodi: tieni la config attuale.")
+        return
+    over, start = {}, None
+    for key, (_, label, o, s_) in best.items():
+        over.update(o)
+        start = s_ if s_ is not None else start
+        print(f"   {label}")
+    comb = _eval(ctx, df, over, start)
+    print(_row("COMBINAZIONE", comb, base))
+    if comb["old"] - base["old"] >= MIN_GAIN and comb["new"] - base["new"] >= MIN_GAIN:
+        print("   Regge in entrambi i periodi. Righe da mettere in config.py:")
+        if start is not None:
+            print(f"     SIGNAL_START = time({start.hour}, {start.minute})")
+        for k, v in over.items():
+            if k.endswith("_POINTS"):
+                continue
+            val = f"time({v.hour}, {v.minute})" if isinstance(v, time) else repr(v)
+            print(f"     {k} = {val}")
+    else:
+        print("   Insieme non regge in entrambi i periodi: applica solo la singola modifica con il guadagno piu' stabile, o nessuna.")
+
+
+def grid_sl_tp(ctx, df):
+    """SL piu' vicino / TP piu' lontano: quanti giorni raggiungono l'obiettivo in dollari e quanto costano i TP."""
+    tgt = 2000.0
+    combos = [(2000, 2000, 3), (2000, 2500, 3), (2000, 3000, 3), (2000, 4000, 3),
+              (1500, 2000, 4), (1500, 3000, 4), (1000, 2000, 6), (1000, 3000, 6)]
+    print(f"\n=== SL PIU' VICINO / TP PIU' LONTANO (obiettivo {tgt:.0f}$ al giorno come somma degli SL, partenza subito) ===")
+    print("   SL$ / TP$ / max segnali | giorni con obiettivo | trade/giorno | TP totali | giorni chiusi con il virtuale in GUADAGNO | "
+          "P&L virtuale | P&L reale | non risolti alle 21:45")
+    for sl, tp, mx in combos:
+        over = dict(SL_USD=float(sl), SL_POINTS=sl / config.USD_PER_POINT, TP_USD=float(tp), TP_POINTS=tp / config.USD_PER_POINT,
+                    DAILY_LOSS_TARGET_USD=tgt, BASE_RELAX_LEVEL=2, MAX_SIGNALS_PER_DAY=mx, TARGET_SIGNALS_PER_DAY=mx,
+                    STOP_AFTER_EXECUTION=False, MIN_COMPLETION_SL_USD=300.0)
+        saved = {k: getattr(config, k) for k in over}
+        for k, v in over.items():
+            setattr(config, k, v)
+        try:
+            tr = sequential_trades(ctx, df)
+        finally:
+            for k, v in saved.items():
+                setattr(config, k, v)
+        d = daily_view(ctx, tr)
+        loss, net = {}, {}
+        for t in tr:
+            dd = int(ctx.day[t["i"]])
+            net[dd] = net.get(dd, 0.0) + t["pnl"]
+            if t["result"] == "SL":
+                loss[dd] = loss.get(dd, 0.0) + t["sl_usd"]
+        ok = sum(1 for v in loss.values() if v >= tgt - 0.5)
+        lo, hi = wilson(ok, d["days"])
+        n_tp = sum(1 for t in tr if t["result"] == "TP")
+        n_close = sum(1 for t in tr if t["result"] == "CHIUSURA")
+        gain_days = sum(1 for v in net.values() if v > 0)
+        pnl = sum(t["pnl"] for t in tr)
+        theo = tp / (tp + sl) * 100
+        print(f"   SL {sl} / TP {tp} / max {mx} (a caso {theo:.0f}% per trade): {ok}/{d['days']} giorni ({ok/max(d['days'],1)*100:.0f}%, IC95 {lo*100:.0f}-{hi*100:.0f}) | "
+              f"{d['avg_sig']:.1f} | TP {n_tp} | {gain_days} | {core.fmt_usd(pnl, True)} | "
+              f"{core.fmt_usd(-pnl * config.MIRROR_LOT_RATIO, True)} | {n_close}")
+    print("   Attenzione: un TP piu' lontano alza la probabilita' dello SL ma, quando viene toccato, il virtuale guadagna di piu' "
+          "e il reale perde di piu'. Senza vantaggio direzionale il P&L atteso resta vicino a zero: cambia solo come e' distribuito.")
 
 
 SEQ_VARIANTS = [
@@ -494,6 +647,9 @@ def main():
         theo = config.TP_POINTS / (config.TP_POINTS + pts) * 100
         run_sequential(ctx, df, f"SL {sl}$ ({pts:.2f} pt, teorico a caso {theo:.1f}%, margine su slippage {(config.SLIPPAGE_POINTS - pts):.2f} pt)",
                        dict(SL_USD=float(sl), SL_POINTS=pts))
+
+    grid_sl_tp(ctx, df)
+    optimize_report(ctx, df)
 
     print("\n=== CONFRONTO EMA (un trade al giorno, resto come config attuale) ===")
     for name, emas in (("EMA 10/20/100", (10, 20, 100)), ("EMA 9/20/200 (attuale)", (9, 20, 200))):
