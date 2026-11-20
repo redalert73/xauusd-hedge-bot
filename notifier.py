@@ -3,6 +3,8 @@
 # ==========================================
 
 import os
+import re
+
 import requests
 
 TIMEOUT = 10
@@ -95,5 +97,9 @@ def fetch_commands(offset: int):
         raw = (msg.get("text") or "").strip()
         text = BUTTONS.get(raw, raw).lower()      # tasti della tastiera fissa -> comando
         if text.startswith("/"):
-            commands.append(text.split()[0].split("@")[0])
+            parts = text.split(maxsplit=1)
+            cmd = parts[0].split("@")[0]
+            commands.append(cmd + (" " + parts[1] if len(parts) > 1 else ""))   # es. "/prezzo 4402.15"
+        elif re.fullmatch(r"\d[\d.,]*", text):
+            commands.append("/prezzo " + text)       # un numero scritto da solo = prezzo di ingresso
     return commands, new_offset

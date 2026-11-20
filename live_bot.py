@@ -377,8 +377,11 @@ def maybe_new_signal(st, df, now_rome):
 # ---------- comandi e riepilogo ----------
 def handle_commands(st):
     cmds, st["tg_offset"] = notifier.fetch_commands(st["tg_offset"])
-    for c in cmds:
-        if c in ("/stop", "/ferma", "/pausa"):
+    for full in cmds:
+        c, _, arg = full.partition(" ")
+        if c in ("/prezzo", "/p", "/ingresso"):
+            set_entry_price(st, arg.strip())
+        elif c in ("/stop", "/ferma", "/pausa"):
             st["paused"] = True
             notifier.send_notification("Nuovi segnali in pausa. I segnali aperti restano monitorati. /riprendi per riattivare.")
         elif c == "/riprendi":
@@ -404,8 +407,10 @@ def handle_commands(st):
             s = st["stats"]
             notifier.send_notification(
                 f"STATO {st['day']}\n"
-                f"Perdita cumulata oggi: {core.fmt_usd(st.get('loss_today', 0.0))} su {core.fmt_usd(config.DAILY_LOSS_TARGET_USD)} | "
-                f"Segnali oggi: {st['signals_today']} | "
+                + (f"Saldo di oggi sul virtuale: {core.fmt_usd(st['stats']['pnl_usd'], True)} | obiettivo {core.fmt_usd(-config.DAILY_LOSS_TARGET_USD, True)} | "
+                   if core.target_mode() == "netto" else
+                   f"Perdita cumulata oggi: {core.fmt_usd(st.get('loss_today', 0.0))} su {core.fmt_usd(config.DAILY_LOSS_TARGET_USD)} | ")
+                + f"Segnali oggi: {st['signals_today']} | "
                 f"Pausa: {'si' if st['paused'] else 'no'} | Fatto: {'si' if st.get('done_today') else 'no'}\n"
                 f"Esiti: SL {s['SL']} | TP {s['TP']} | Chiusura {s['CHIUSURA']} | Ambigui {s['AMBIGUO']}\n"
                 f"SL virtuale toccato oggi: {'si' if s['SL'] else 'non ancora'}\n"
@@ -414,6 +419,59 @@ def handle_commands(st):
                 f"Segnali seguiti: {sum(1 for o in st['positions'] if o.get('confirmed', True))} | "
                 f"in attesa di conferma: {sum(1 for o in st['positions'] if not o.get('confirmed', True))}"
             )
+
+
+def parse_price(txt):
+    """Accetta 4402.15, 4402,15, 4.402,15 e 4,402.15."""
+    t = txt.replace(" ", "")
+    if "," in t and "." in t:
+        t = t.replace(".", "").replace(",", ".") if t.rfind(",") > t.rfind(".") else t.replace(",", "")
+    else:
+        t = t.replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def set_entry_price(st, arg):
+    """/prezzo 4402.15: il tuo prezzo reale di ingresso. Ricalcola SL e TP esatti e il bot segue quei livelli."""
+    price = parse_price(arg) if arg else None
+    if price is None:
+        notifier.send_notification("Scrivi il prezzo a cui sei entrato, per esempio: /prezzo 4402.15 (o solo 4402.15).")
+        return
+    if not st["positions"]:
+        notifier.send_notification("Nessun segnale aperto o in attesa: il prezzo non e' stato associato a niente.")
+        return
+    op = st["positions"][-1]
+    ref = op.get("signal_entry", op["entry"])
+    if abs(price - ref) > 15:
+        notifier.send_notification(
+            f"Prezzo {p2(price)} troppo lontano dal segnale ({p2(ref)}, {abs(price - ref):.2f} di differenza): controlla e riscrivilo.")
+        return
+    was_pending = not op.get("confirmed", True)
+    op["signal_entry"] = ref
+    op["entry"] = price
+    op["confirmed"] = True
+    if was_pending and config.STOP_AFTER_EXECUTION:
+        st["done_today"] = True
+    sl_usd = op.get("sl_usd") or config.SL_USD
+    slip_usd = op.get("slip_usd") or config.SLIPPAGE_MAX_USD
+    loser, mirror = core.levels(price, op["loser"], sl_usd, slip_usd)
+    mt5 = lambda usd: round(usd / config.USD_PER_POINT * 100)      # punti MT5 (0,01) con 2 decimali
+    lab = core.candle_end_rome(pd.Timestamp(op["candle_start"])).strftime("%H:%M")
+    notifier.send_notification(
+        f"LIVELLI ESATTI per il tuo ingresso a {p2(price)} (segnale delle {lab})"
+        + (" - segnato come eseguito" if was_pending else "") + "\n\n"
+        f"VIRTUALE {op['loser']} {config.LOT_SIZE}:\n"
+        f"  SL {p2(loser['sl'])}  ({core.fmt_usd(-sl_usd, True)}, {mt5(sl_usd)} punti MT5)\n"
+        f"  TP {p2(loser['tp'])}  ({core.fmt_usd(config.TP_USD, True)}, {mt5(config.TP_USD)} punti MT5)\n"
+        f"  limite da non raggiungere {p2(loser['slip'])}\n\n"
+        f"REALE {mirror['dir']} {config.MIRROR_LOT}:\n"
+        f"  TP {p2(mirror['tp'])}\n"
+        f"  SL {p2(mirror['sl'])}\n\n"
+        "Da ora seguo questi livelli. Se hai sbagliato, riscrivi il prezzo."
+    )
 
 
 def maybe_morning(st, now_rome):
