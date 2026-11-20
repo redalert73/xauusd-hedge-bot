@@ -39,12 +39,12 @@ DAILY_LOSS_TARGET_USD = 2000.0
 # "netto": l'obiettivo e' il SALDO del giorno, TP compresi. Dopo un TP da +2.000 il segnale successivo ha SL 4.000,
 # cosi' se viene toccato la giornata chiude a -2.000. "lordo": somma dei soli SL toccati (metodo precedente).
 DAILY_TARGET_MODE = "netto"
-MAX_SL_USD = 6000.0              # tetto dello SL adattato (oltre ~58 pt raramente si tocca in giornata)
+MAX_SL_USD = 4000.0              # tetto dello SL adattato (oltre ~58 pt raramente si tocca in giornata)
 MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifica lo "Stops level" di XAUUSD su MT5)
 
 # --- Livelli di rischio (broker PERDENTE) ---
 SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
-TP_USD = 2000.0           # esito da evitare
+TP_USD = 2200.0           # esito da evitare
 SLIPPAGE_MAX_USD = 2600.0 # il saldo della giornata non deve mai scendere sotto -2.600 (limite del broker 3.000)
 
 SL_POINTS = SL_USD / USD_PER_POINT                # ~21.15
