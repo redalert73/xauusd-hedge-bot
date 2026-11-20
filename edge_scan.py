@@ -228,6 +228,76 @@ def rules_report(df, ctx):
             print(f"  {name} [{tag}]: {n} segnali | SL per primo {k/n*100:.1f}% (IC95 {lo*100:.1f}-{hi*100:.1f}) | {verdict} (caso {THEORY*100:.1f}%)")
 
 
+def levels_report(df, ctx, idx, res, cut):
+    """Livelli importanti tra l'ingresso e lo SL (possibile 'muro') o appena oltre lo SL (possibile 'calamita')."""
+    BEYOND = 5.0                                    # punti oltre lo SL per contare un livello come 'appena oltre'
+    t = df.index
+    o, h, l = df["open"].to_numpy(), df["high"].to_numpy(), df["low"].to_numpy()
+
+    def prev_and_open(key):
+        g = pd.DataFrame({"k": key, "o": o, "h": h, "l": l}).groupby("k", sort=True).agg(o=("o", "first"), h=("h", "max"), l=("l", "min"))
+        prev = g.shift(1)
+        return (prev["h"].reindex(key).to_numpy(), prev["l"].reindex(key).to_numpy(), g["o"].reindex(key).to_numpy())
+
+    kd = t.normalize()
+    kw = (t - pd.to_timedelta(t.weekday, unit="D")).normalize()
+    km = t.to_period("M")
+    dh, dl, _ = prev_and_open(kd)
+    wh, wl, wo = prev_and_open(kw)
+    mh, ml, mo = prev_and_open(km)
+    sets = {
+        "numero tondo 100 (es. 3.500, 4.000)": lambda i, a, b: [x for x in np.arange(np.floor(a / 100) * 100, b + 100, 100)],
+        "numero tondo 50": lambda i, a, b: [x for x in np.arange(np.floor(a / 50) * 50, b + 50, 50)],
+        "massimo/minimo di ieri": lambda i, a, b: [dh[i], dl[i]],
+        "massimo/minimo settimana precedente": lambda i, a, b: [wh[i], wl[i]],
+        "massimo/minimo mese precedente": lambda i, a, b: [mh[i], ml[i]],
+        "apertura della settimana": lambda i, a, b: [wo[i]],
+        "apertura del mese": lambda i, a, b: [mo[i]],
+    }
+    slp = config.SL_POINTS
+    old, new = set(idx[:cut]), set(idx[cut:])
+    base_all = np.mean([res[s_][i] for i in idx for s_ in ("BUY", "SELL")])
+    base_old = np.mean([res[s_][i] for i in idx[:cut] for s_ in ("BUY", "SELL")])
+    base_new = np.mean([res[s_][i] for i in idx[cut:] for s_ in ("BUY", "SELL")])
+    print("\nLIVELLI IMPORTANTI RISPETTO ALLO SL (gamba perdente, entrambe le direzioni)")
+    print(f"  'tra' = livello tra ingresso e SL (puo' fermare il prezzo) | 'oltre' = entro {BEYOND:.0f} pt dopo lo SL (puo' attirarlo)")
+    print(f"  Base: SL per primo {base_all*100:.1f}% (vecchi {base_old*100:.1f}%, recenti {base_new*100:.1f}%). "
+          "Conta solo se vecchi e recenti vanno nello stesso verso di almeno 2 pt, con |z| >= 3 (sui giorni).")
+    found = []
+    for name, fn_ in sets.items():
+        groups = {"tra": [], "oltre": [], "nessuno": []}
+        for i in idx:
+            c = ctx.c[i]
+            for side in ("BUY", "SELL"):
+                sl = c - slp if side == "BUY" else c + slp
+                lo_, hi_ = (sl - BEYOND, c) if side == "BUY" else (c, sl + BEYOND)
+                lv = [x for x in fn_(i, lo_, hi_) if x == x]
+                between = any(min(c, sl) < x < max(c, sl) for x in lv)
+                beyond = any((sl - BEYOND <= x < sl) if side == "BUY" else (sl < x <= sl + BEYOND) for x in lv)
+                g = "tra" if between else ("oltre" if beyond else "nessuno")
+                groups[g].append((i, res[side][i]))
+        print(f"  -- {name} --")
+        for g in ("tra", "oltre", "nessuno"):
+            v = groups[g]
+            if len(v) < 40:
+                print(f"     {g:8s}: troppo pochi casi ({len(v)})")
+                continue
+            a = np.array([x for _, x in v]); n = len(a)
+            ao = np.array([x for i, x in v if i in old]); an = np.array([x for i, x in v if i in new])
+            lo, hi = wilson(int(a.sum()), n)
+            n_days = len({int(ctx.day[i]) for i, _ in v})          # giorni distinti: i casi dello stesso giorno sono legati
+            z = (a.mean() - base_all) / np.sqrt(base_all * (1 - base_all) / max(n_days, 1))
+            do = (ao.mean() - base_old) * 100 if len(ao) else 0.0
+            dn = (an.mean() - base_new) * 100 if len(an) else 0.0
+            print(f"     {g:8s}: {n:5d} casi in {n_days:3d} giorni | SL per primo {a.mean()*100:5.1f}% (IC95 {lo*100:.1f}-{hi*100:.1f}) | "
+                  f"vecchi {do:+5.1f} pt, recenti {dn:+5.1f} pt | z {z:+.1f}")
+            if g != "nessuno" and abs(z) >= 3 and do * dn > 0 and min(abs(do), abs(dn)) >= 2:
+                found.append(f"{name}, livello {g}: {'piu' if z > 0 else 'meno'} SL ({a.mean()*100:.1f}%)")
+    print("  RISULTATO: " + ("; ".join(found) if found else
+          "nessun livello cambia in modo stabile la probabilita' dello SL. Gli esempi in cui rimbalza non battono il conto completo."))
+    print("  Nota: z e' calcolato sui giorni distinti, non sui singoli ingressi (piu' ingressi nello stesso giorno non sono indipendenti).")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pages", type=int, default=6)
@@ -288,6 +358,7 @@ def main():
     print("  Dove 'SL per primo' scende e la colonna 'ne' SL ne' TP' sale, il mercato e' troppo lento per toccare lo SL.")
 
     rules_report(df, ctx)
+    levels_report(df, ctx, idx, res, cut)
 
     B = buckets(F, train)
     rows = []

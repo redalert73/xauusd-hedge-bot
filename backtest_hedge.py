@@ -98,14 +98,14 @@ class Ctx:
         return self.wd[i] < 5 and self.start_m <= end_m < self.end_m
 
 
-def run_trade(ctx, i, loser, entry, sl_usd=None):
+def run_trade(ctx, i, loser, entry, sl_usd=None, slip_usd=None):
     """Stesse regole del live. Parte dalla candela successiva al segnale."""
     for j in range(i + 1, ctx.n):
         if ctx.day[j] != ctx.day[i] or ctx.mins[j] >= ctx.close_m:
             exit_price = ctx.o[j] if ctx.day[j] == ctx.day[i] else ctx.c[j - 1]
             return {"i": i, "exit_i": j, "loser": loser, "result": "CHIUSURA", "slip": False,
                     "pnl": core.pnl_usd(loser, entry, exit_price), "sl_usd": sl_usd or config.SL_USD}
-        outcome, slip, _ = core.step_outcome(loser, entry, ctx.h[j], ctx.l[j], sl_usd)
+        outcome, slip, _ = core.step_outcome(loser, entry, ctx.h[j], ctx.l[j], sl_usd, slip_usd)
         if outcome:
             pnl = -(sl_usd or config.SL_USD) if outcome == "SL" else config.TP_USD  # AMBIGUO = caso peggiore
             return {"i": i, "exit_i": j, "loser": loser, "result": outcome, "slip": slip, "pnl": pnl,
@@ -259,12 +259,12 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0, invert=False):
     p = strategy_hedge._merge(params)
     ef, em = df["close"].ewm(span=p["ema_fast"], adjust=False).mean().to_numpy(), df["close"].ewm(span=p["ema_mid"], adjust=False).mean().to_numpy()
     trend_loser = np.where(ef >= em, "SELL", "BUY")      # il mirror segue il trend, il perdente e' l'opposto
-    trades, busy_until, per_day, last_i, done, loss = [], -1, {}, {}, set(), {}
+    trades, busy_until, per_day, last_i, done, loss, net = [], -1, {}, {}, set(), {}, {}
     for i in range(max(0, strategy_hedge.MIN_BARS), ctx.n):
         if i < busy_until or not ctx.signal_ok(i):
             continue
         d = int(ctx.day[i])
-        sl_pre = core.next_sl_usd(loss.get(d, 0.0))
+        sl_pre = core.next_sl_usd(loss.get(d, 0.0), net.get(d, 0.0))
         completion_pre = sl_pre is not None and sl_pre < config.SL_USD - 0.5
         last = getattr(config, "LAST_SIGNAL_TIME", None)
         if (not completion_pre) and last is not None and ctx.mins[i] + core.CANDLE_MIN > last.hour * 60 + last.minute:
@@ -274,7 +274,7 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0, invert=False):
             continue
         if i - last_i.get(d, -10**9) < gap_candles:
             continue
-        sl_usd = core.next_sl_usd(loss.get(d, 0.0))
+        sl_usd = core.next_sl_usd(loss.get(d, 0.0), net.get(d, 0.0))
         if sl_usd is None:
             done.add(d)
             continue
@@ -294,7 +294,7 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0, invert=False):
             continue
         if invert and not blind:
             loser = "BUY" if loser == "SELL" else "SELL"     # what-if: direzione contraria al segnale
-        t = run_trade(ctx, i, loser, ctx.c[i], sl_usd)
+        t = run_trade(ctx, i, loser, ctx.c[i], sl_usd, core.slip_usd_for(net.get(d, 0.0)))
         if t is None:
             continue
         per_day[d] = n + 1
@@ -302,11 +302,13 @@ def sequential_trades(ctx, df, params=None, blind=False, seed=0, invert=False):
         busy_until = t["exit_i"]
         t["n"] = n + 1
         trades.append(t)
+        t["net_before"] = net.get(d, 0.0)
+        net[d] = net.get(d, 0.0) + t["pnl"]
         if t["result"] == "SL":
             loss[d] = loss.get(d, 0.0) + t["sl_usd"]
         target = getattr(config, "DAILY_LOSS_TARGET_USD", 0)
         if target:
-            if loss.get(d, 0.0) >= target - 0.5:
+            if core.next_sl_usd(loss.get(d, 0.0), net[d]) is None:
                 done.add(d)
         elif config.STOP_AFTER_EXECUTION or t["result"] == "SL":
             done.add(d)  # regola attuale: primo trade eseguito e basta. Con STOP_AFTER_EXECUTION=False (solo what-if): stop dopo lo SL, nuovo tentativo dopo TP/chiusura
@@ -452,6 +454,91 @@ def optimize_report(ctx, df):
             print(f"     {k} = {val}")
     else:
         print("   Insieme non regge in entrambi i periodi: applica solo la singola modifica con il guadagno piu' stabile, o nessuna.")
+
+
+def _challenge_sim(day_paths, cost=35.0, n=4000, seed=1):
+    """Ricampiona i giorni reali (con il percorso dentro la giornata) e simula le due challenge:
+    fase 1 obiettivo +8.000, fase 2 +5.000, perdita massima -10.000. Ritorna (% bruciato, giorni mediani)."""
+    import random
+    if not day_paths:
+        return 0.0, 0
+    rng = random.Random(seed)
+    burned, days_list = 0, []
+    for _ in range(n):
+        total_days = 0
+        res = None
+        for target in (8000.0, 5000.0):
+            v = 0.0
+            for _d in range(400):
+                total_days += 1
+                path = rng.choice(day_paths)
+                base = v
+                for k, cum in enumerate(path, 1):
+                    v = base + cum - cost * k
+                    if v <= -10000:
+                        res = "burn"; break
+                    if v >= target:
+                        res = "pass"; break
+                if res:
+                    break
+            if res == "burn":
+                burned += 1; days_list.append(total_days); break
+            if res != "pass":
+                break
+            res = None
+    days_list.sort()
+    return burned / n, (days_list[len(days_list) // 2] if days_list else 0)
+
+
+def net_target_report(ctx, df):
+    """Obiettivo giornaliero NETTO (TP compresi) con SL adattato, confrontato con l'obiettivo lordo attuale."""
+    tgt = getattr(config, "DAILY_LOSS_TARGET_USD", 0) or config.SL_USD
+    print(f"\n=== OBIETTIVO NETTO: chiudere la giornata a -{tgt:,.0f}$ contando anche i TP (SL adattato) ===".replace(",", "."))
+    print(f"   Limite giornaliero: il saldo del giorno non deve mai scendere sotto -{config.SLIPPAGE_MAX_USD:,.0f}$ "
+          "(l'avviso del singolo trade si sposta con il saldo).".replace(",", "."))
+    print("   Le probabilita' delle challenge ricampionano i giorni reali (fase 1 +8.000, fase 2 +5.000, perdita max -10.000, costi 35$/trade).")
+    variants = [("LORDO (somma dei soli SL, attuale)", {"DAILY_TARGET_MODE": "lordo"})]
+    for mx in (3, 5):
+        for cap in (4000.0, 6000.0, 8000.0):
+            variants.append((f"NETTO max {mx} segnali, SL max {core.fmt_usd(cap)}",
+                             {"DAILY_TARGET_MODE": "netto", "MAX_SL_USD": cap, "MAX_SIGNALS_PER_DAY": mx,
+                              "TARGET_SIGNALS_PER_DAY": min(mx, config.TARGET_SIGNALS_PER_DAY)}))
+    all_days = sorted({int(ctx.day[i]) for i in range(ctx.n) if ctx.signal_ok(i)})
+    cut = int(len(all_days) * 0.6)
+    for label, over in variants:
+        over = dict(over, DAILY_LOSS_TARGET_USD=tgt)
+        saved = {k: getattr(config, k, None) for k in over}
+        for k, v in over.items():
+            setattr(config, k, v)
+        try:
+            tr = sequential_trades(ctx, df)
+        finally:
+            for k, v in saved.items():
+                setattr(config, k, v)
+        net, paths, ntr = {}, {}, {}
+        worst = 0.0
+        for t in tr:
+            d = int(ctx.day[t["i"]])
+            net[d] = net.get(d, 0.0) + t["pnl"]
+            paths.setdefault(d, []).append(net[d])
+            ntr[d] = ntr.get(d, 0) + 1
+        for d in all_days:
+            paths.setdefault(d, [])
+            worst = min(worst, net.get(d, 0.0))
+        ok = lambda ds: sum(1 for d in ds if net.get(d, 0.0) <= -tgt + 0.5) / max(len(ds), 1)
+        n_ok = sum(1 for d in all_days if net.get(d, 0.0) <= -tgt + 0.5)
+        lo, hi = wilson(n_ok, len(all_days))
+        unres = sum(1 for t in tr if t["result"] == "CHIUSURA")
+        slips = sum(1 for t in tr if t.get("slip"))
+        big = sum(1 for t in tr if t["sl_usd"] > config.SL_USD + 0.5)
+        mean_net = sum(net.values()) / max(len(all_days), 1)
+        burn, med = _challenge_sim([paths[d] for d in all_days])
+        print(f"   {label:38s} giorni a {core.fmt_usd(-tgt, True)}: {ok(all_days)*100:3.0f}% (IC95 {lo*100:.0f}-{hi*100:.0f}; vecchi {ok(all_days[:cut])*100:.0f}%, recenti {ok(all_days[cut:])*100:.0f}%) | "
+              f"trade/g {sum(ntr.values())/max(len(all_days),1):.1f} (con SL adattato {big}) | non risolti {unres} | oltre avviso {slips} | "
+              f"saldo medio/g {core.fmt_usd(mean_net, True)} | peggior giorno {core.fmt_usd(worst, True)} | "
+              f"CHALLENGE: bruciato {burn*100:.0f}% in ~{med} giorni")
+    print("   Il saldo medio vicino a zero e' normale (nessun vantaggio direzionale): conta la velocita' con cui si arriva a -10.000.")
+    print("   'peggior giorno' deve restare sopra il limite giornaliero; i salti oltre lo stop sul broker non sono simulabili con candele M5.")
 
 
 def grid_sl_tp(ctx, df):
@@ -649,6 +736,7 @@ def main():
                        dict(SL_USD=float(sl), SL_POINTS=pts))
 
     grid_sl_tp(ctx, df)
+    net_target_report(ctx, df)
     optimize_report(ctx, df)
 
     print("\n=== CONFRONTO EMA (un trade al giorno, resto come config attuale) ===")

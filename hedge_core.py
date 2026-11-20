@@ -77,11 +77,25 @@ def sl_points(sl_usd=None):
     return (sl_usd if sl_usd else config.SL_USD) / config.USD_PER_POINT
 
 
-def next_sl_usd(loss_today):
-    """SL (in $) del prossimo segnale. None = obiettivo giornaliero gia' raggiunto."""
+def target_mode():
+    """'netto' = l'obiettivo e' il saldo del giorno (TP compresi); 'lordo' = somma dei soli SL toccati."""
+    return getattr(config, "DAILY_TARGET_MODE", "netto")
+
+
+def next_sl_usd(loss_today, net_today=None):
+    """SL (in $) del prossimo segnale. None = obiettivo giornaliero gia' raggiunto.
+    Modalita' netta: lo SL e' quanto serve per chiudere il giorno a -obiettivo, contando i TP gia' presi
+    (es. dopo un TP da +2.000 il prossimo SL e' 4.000), con un tetto MAX_SL_USD."""
     target = getattr(config, "DAILY_LOSS_TARGET_USD", 0)
     if not target:
         return config.SL_USD
+    if target_mode() == "netto" and net_today is not None:
+        remaining = target + net_today
+        if remaining <= 0.5:
+            return None
+        sl = max(remaining, getattr(config, "MIN_COMPLETION_SL_USD", 300.0))
+        cap = getattr(config, "MAX_SL_USD", 6000.0)
+        return min(sl, cap) if cap else sl
     remaining = target - loss_today
     if remaining <= 0.5:
         return None
@@ -90,7 +104,14 @@ def next_sl_usd(loss_today):
     return max(remaining, getattr(config, "MIN_COMPLETION_SL_USD", 300.0))
 
 
-def levels(entry, loser_dir, sl_usd=None):
+def slip_usd_for(net_today=0.0):
+    """Perdita del singolo trade a cui scatta l'avviso: il saldo del giorno non deve scendere sotto -SLIPPAGE_MAX_USD."""
+    if target_mode() == "netto" and getattr(config, "DAILY_LOSS_TARGET_USD", 0):
+        return config.SLIPPAGE_MAX_USD + (net_today or 0.0)
+    return config.SLIPPAGE_MAX_USD
+
+
+def levels(entry, loser_dir, sl_usd=None, slip_usd=None):
     """Livelli di prezzo per la gamba PERDENTE e per quella SPECULARE."""
     sgn = 1 if loser_dir == "BUY" else -1
     loser = {
@@ -98,7 +119,7 @@ def levels(entry, loser_dir, sl_usd=None):
         "entry": entry,
         "sl": entry - sgn * sl_points(sl_usd),        # obiettivo
         "tp": entry + sgn * config.TP_POINTS,        # da evitare
-        "slip": entry - sgn * config.SLIPPAGE_POINTS,  # limite da non raggiungere
+        "slip": entry - sgn * ((slip_usd or config.SLIPPAGE_MAX_USD) / config.USD_PER_POINT),  # limite da non raggiungere
     }
     mirror = {
         "dir": opposite(loser_dir),
@@ -110,7 +131,7 @@ def levels(entry, loser_dir, sl_usd=None):
 
 
 # ---------- esito di una candela ----------
-def step_outcome(loser_dir, entry, high, low, sl_usd=None):
+def step_outcome(loser_dir, entry, high, low, sl_usd=None, slip_usd=None):
     """Valuta una candela CHIUSA per la gamba perdente.
 
     Ritorna (esito, slip_breach, adverse_usd) con esito in
@@ -127,7 +148,7 @@ def step_outcome(loser_dir, entry, high, low, sl_usd=None):
     adverse = max(adverse, 0.0)
     hit_sl = adverse >= sl_points(sl_usd)
     hit_tp = favorable >= config.TP_POINTS
-    slip = adverse >= config.SLIPPAGE_POINTS
+    slip = adverse >= ((slip_usd or config.SLIPPAGE_MAX_USD) / config.USD_PER_POINT)
     adverse_usd = adverse * config.USD_PER_POINT
     if hit_sl and hit_tp:
         return "AMBIGUO", slip, adverse_usd
