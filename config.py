@@ -36,12 +36,16 @@ MIRROR_LOT_RATIO = MIRROR_LOT / LOT_SIZE  # ~0.106: usato per i P&L in dollari
 # Con 2.500$ un solo SL da 2.200$ non basta: dopo il primo SL il bot manda un segnale di COMPLETAMENTO
 # con SL = quanto manca (minimo MIN_COMPLETION_SL_USD). Si ferma quando la somma degli SL arriva a questo valore.
 DAILY_LOSS_TARGET_USD = 2000.0
+# "netto": l'obiettivo e' il SALDO del giorno, TP compresi. Dopo un TP da +2.000 il segnale successivo ha SL 4.000,
+# cosi' se viene toccato la giornata chiude a -2.000. "lordo": somma dei soli SL toccati (metodo precedente).
+DAILY_TARGET_MODE = "netto"
+MAX_SL_USD = 6000.0              # tetto dello SL adattato (oltre ~58 pt raramente si tocca in giornata)
 MIN_COMPLETION_SL_USD = 300.0   # SL minimo del segnale di completamento (verifica lo "Stops level" di XAUUSD su MT5)
 
 # --- Livelli di rischio (broker PERDENTE) ---
 SL_USD = 2000.0           # OBIETTIVO dei segnali: la gamba perdente deve toccare lo SL
 TP_USD = 2000.0           # esito da evitare
-SLIPPAGE_MAX_USD = 2600.0 # perdita massima da non raggiungere mai
+SLIPPAGE_MAX_USD = 2600.0 # il saldo della giornata non deve mai scendere sotto -2.600 (limite del broker 3.000)
 
 SL_POINTS = SL_USD / USD_PER_POINT                # ~21.15
 TP_POINTS = TP_USD / USD_PER_POINT                # ~19.23
@@ -52,7 +56,7 @@ TIMEZONE = "Europe/Rome"
 SIGNAL_START = time(6, 0)     # primo segnale inviabile
 SIGNAL_END = time(20, 0)      # nessun nuovo segnale da questo orario
 FORCE_CLOSE = time(21, 45)    # chiusura automatica di tutte le posizioni
-LAST_SIGNAL_TIME = time(17, 0)  # dalle 15:00 nessun nuovo segnale: nel pomeriggio/sera SL e TP spesso non vengono toccati (dati reali)
+LAST_SIGNAL_TIME = time(17, 0)  # ultimo segnale alle 17:00: dopo, SL e TP spesso non vengono toccati prima delle 21:45 (dati reali)
 
 # --- Fasce a liquidita' ridotta ---
 # In queste fasce (ora italiana) il mercato e' piu' lento: spesso ne' SL ne' TP vengono toccati.
@@ -73,6 +77,8 @@ SINGLE_POSITION = True
 # Se non confermi entro CONFIRM_TIMEOUT_MIN minuti il segnale scade, non conta e puo' arrivarne un altro.
 REQUIRE_CONFIRMATION = True
 CONFIRM_TIMEOUT_MIN = 15
+CONFIRM_REMINDER_MIN = 5       # promemoria se non confermi entro 5 minuti (0 = spento)
+MORNING_PING_MIN = 5           # messaggio "bot attivo" 5 minuti prima dell'inizio (0 = spento)
 STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altro per quel giorno.
 #   False = "riprova dopo un TP": dopo un TP (o chiusura senza esito) puo' arrivare un nuovo segnale; dopo lo SL si ferma.
 #   Backtest (255 giorni): 2 tentativi con BASE_RELAX_LEVEL=1, TARGET=2, MAX=2, GAP=10 -> SL in ~64% dei giorni; 3 tentativi -> ~69%.
@@ -82,7 +88,7 @@ STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altr
 #   massimo         : 1 / 12 / 30 /  5   (~15 segnali/giorno: poco in piu' sui giorni con SL)
 BASE_RELAX_LEVEL = 2          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
 TARGET_SIGNALS_PER_DAY = 2    # il bot allenta i filtri man mano che passa il tempo finche' non arrivano questi segnali
-MAX_SIGNALS_PER_DAY = 5       # massimo di segnali al giorno: il secondo arriva solo dopo che il primo si e' chiuso in TP (dopo lo SL il bot si ferma)
+MAX_SIGNALS_PER_DAY = 5       # massimo di segnali al giorno: il successivo arriva solo dopo un TP; raggiunto l'obiettivo il bot si ferma
 MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
