@@ -1,0 +1,31 @@
+name: Controllo mensile range
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Pagine da 5000 candele M5"
+        default: "20"
+
+concurrency:
+  group: twelvedata
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Controllo mensile
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: python -u monthly_check.py --pages ${{ inputs.pages }} | tee monthly_report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monthly-report
+          path: monthly_report.txt
