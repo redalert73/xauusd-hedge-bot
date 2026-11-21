@@ -88,7 +88,7 @@ STOP_AFTER_EXECUTION = False  # True: dopo il primo segnale eseguito niente altr
 #   massimo         : 1 / 12 / 30 /  5   (~15 segnali/giorno: poco in piu' sui giorni con SL)
 BASE_RELAX_LEVEL = 2          # livelli sempre attivi: 0 = solo selettivo, 1 = + esteso. Livelli piu' larghi solo se sei in ritardo
 TARGET_SIGNALS_PER_DAY = 2    # il bot allenta i filtri man mano che passa il tempo finche' non arrivano questi segnali
-MAX_SIGNALS_PER_DAY = 5       # massimo di segnali al giorno: il successivo arriva solo dopo un TP; raggiunto l'obiettivo il bot si ferma
+MAX_SIGNALS_PER_DAY = 3       # massimo di segnali al giorno: il successivo arriva solo dopo un TP; raggiunto l'obiettivo il bot si ferma
 MIN_SIGNAL_GAP_MIN = 10       # distanza minima tra due segnali (evita raffiche sulla stessa mossa)
 PACE_DEADLINE_FRAC = 0.6      # il target va raggiunto entro il 60% della finestra (~14:24): piu' tempo per risolversi
 QUOTA_FRAC = 0.5              # oltre il 50% della finestra (~13:00), se sei sotto target scatta il livello "quota"
