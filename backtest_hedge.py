@@ -499,8 +499,8 @@ def net_target_report(ctx, df):
     print("   Le probabilita' delle challenge ricampionano i giorni reali (fase 1 +8.000, fase 2 +5.000, perdita max -10.000, costi 35$/trade).")
     variants = [("LORDO (somma dei soli SL, attuale)", {"DAILY_TARGET_MODE": "lordo"})]
     for mx in (3, 5):
-        for cap in (4000.0, 6000.0, 8000.0):
-            variants.append((f"NETTO max {mx} segnali, SL max {core.fmt_usd(cap)}",
+        for cap in (2000.0, 4000.0, 6000.0):   # 2.000 = SL sempre 2.000, si continua finche' il saldo e' -2.000
+            variants.append((f"NETTO max {mx} segnali, " + ("SL sempre 2.000$" if cap <= 2000 else f"SL max {core.fmt_usd(cap)}"),
                              {"DAILY_TARGET_MODE": "netto", "MAX_SL_USD": cap, "MAX_SIGNALS_PER_DAY": mx,
                               "TARGET_SIGNALS_PER_DAY": min(mx, config.TARGET_SIGNALS_PER_DAY)}))
     all_days = sorted({int(ctx.day[i]) for i in range(ctx.n) if ctx.signal_ok(i)})
